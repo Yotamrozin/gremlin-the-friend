@@ -4,7 +4,7 @@
 
 Your gremlin keeps your calendar and to-do list and sends you reminders. It runs on your own Windows PC and answers only your phone number. It is never exposed to the internet, and by default your calendar and tasks never leave your own devices.
 
-**→ [Illustrated step-by-step guide](https://yotamrozin.github.io/gremlin-the-friend/)**
+**→ [Illustrated step-by-step guide](https://gremlin-the-friend.vercel.app)**
 
 Gremlin the Friend is an unofficial setup kit for [OpenClaw](https://github.com/openclaw/openclaw). It isn't affiliated with OpenClaw, Signal, Anthropic or any calendar provider.
 
@@ -37,7 +37,7 @@ Prefer doing it by hand? Run [`windows/setup-autostart.ps1`](windows/setup-autos
 
 | Path | What it is |
 |---|---|
-| [`docs/`](docs/) | The guide website (served by GitHub Pages) |
+| [`docs/`](docs/) | The guide website, deployed to [gremlin-the-friend.vercel.app](https://gremlin-the-friend.vercel.app) on every push |
 | [`GUIDE.md`](GUIDE.md) | Technical reference, with a check for each step and a table of known problems |
 | [`KICKOFF-PROMPT.md`](KICKOFF-PROMPT.md) | The prompt that lets Claude Code walk you through setup |
 | [`windows/`](windows/) | Autostart: hidden scheduled tasks plus a watchdog that keeps WSL2 running |
