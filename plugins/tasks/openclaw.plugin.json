@@ -1,0 +1,43 @@
+{
+  "id": "tasks",
+  "name": "Tasks (self-hosted CalDAV)",
+  "description": "Read and write to-do items on a self-hosted Radicale CalDAV server, reachable over Tailscale.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "serverUrl",
+      "username",
+      "password"
+    ],
+    "properties": {
+      "serverUrl": {
+        "type": "string",
+        "description": "Radicale base URL, e.g. https://your-pc-wsl.your-tailnet.ts.net/"
+      },
+      "username": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string"
+      },
+      "listName": {
+        "type": "string",
+        "description": "Default task list display name when a call doesn't specify one."
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "tasks_list_lists",
+      "tasks_create_list",
+      "tasks_list",
+      "tasks_create",
+      "tasks_complete",
+      "tasks_delete"
+    ]
+  }
+}

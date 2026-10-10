@@ -1,0 +1,44 @@
+{
+  "id": "calendar",
+  "name": "Calendar (CalDAV)",
+  "description": "Read and write events across one or more calendars on any CalDAV server (self-hosted, iCloud, Fastmail, Nextcloud, …).",
+  "version": "0.2.0",
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "serverUrl",
+      "username",
+      "password"
+    ],
+    "properties": {
+      "serverUrl": {
+        "type": "string",
+        "description": "CalDAV server URL, e.g. https://caldav.icloud.com/ or https://your-pc-wsl.your-tailnet.ts.net/"
+      },
+      "username": {
+        "type": "string",
+        "description": "Login name (usually your email address)."
+      },
+      "password": {
+        "type": "string",
+        "description": "App-specific password, never the account's main password."
+      },
+      "calendarName": {
+        "type": "string",
+        "description": "Default calendar display name when a tool call doesn't specify one."
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "calendar_list_calendars",
+      "calendar_create_calendar",
+      "calendar_list_events",
+      "calendar_create_event",
+      "calendar_delete_event"
+    ]
+  }
+}

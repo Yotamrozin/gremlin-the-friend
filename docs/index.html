@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gremlin the Friend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a single reading column with a numbered progress rail on the left; each step is a "who does what" panel with a check at the bottom. */
+:root {
+  --bg: #f3f6f8;
+  --surface: #ffffff;
+  --ink: #13202b;
+  --muted: #566573;
+  --line: #d7dfe6;
+  --accent: #2456e8;
+  --accent-soft: #e4ebff;
+  --ok: #157a52;
+  --ok-soft: #dcf2e8;
+  --warn: #9a5b00;
+  --warn-soft: #fbefd9;
+  --code-bg: #0f1a24;
+  --code-fg: #d8e4ee;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d141a; --surface: #141e27; --ink: #e5edf3; --muted: #9aabb9; --line: #26343f;
+    --accent: #86a6ff; --accent-soft: #1b2850; --ok: #5fd3a0; --ok-soft: #11392a;
+    --warn: #f2b860; --warn-soft: #3a2a10; --code-bg: #070c11; --code-fg: #d8e4ee;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d141a; --surface: #141e27; --ink: #e5edf3; --muted: #9aabb9; --line: #26343f;
+  --accent: #86a6ff; --accent-soft: #1b2850; --ok: #5fd3a0; --ok-soft: #11392a;
+  --warn: #f2b860; --warn-soft: #3a2a10; --code-bg: #070c11; --code-fg: #d8e4ee;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 17px/1.6 var(--f-body); padding-inline: 16px; }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 48px 96px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.12; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.3rem, 6vw, 3.6rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.5rem, 3.4vw, 2rem); font-weight: 700; letter-spacing: -0.01em; }
+h3 { font-size: 1.15rem; font-weight: 700; }
+p { margin: 0; max-width: 65ch; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.86em; background: var(--accent-soft); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font: 600 0.75rem/1 var(--f-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.2rem; color: var(--muted); }
+.stack { display: grid; gap: 16px; }
+.stack-lg { display: grid; gap: 28px; }
+
+/* Hero: a mock Signal exchange shows what you get */
+.hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 10px; font-size: 0.95rem; }
+.chat .who { font: 600 0.7rem/1 var(--f-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bubble { padding: 10px 14px; border-radius: 16px; max-width: 88%; }
+.me { background: var(--accent); color: #fff; justify-self: end; border-bottom-right-radius: 4px; }
+:root[data-theme="dark"] .me { color: #0d141a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .me { color: #0d141a; } }
+.bot { background: var(--accent-soft); color: var(--ink); border-bottom-left-radius: 4px; }
+@media (max-width: 720px) { .hero { grid-template-columns: 1fr; } }
+
+/* What you need */
+.needs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.need { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 4px; align-content: start; }
+.need b { font-family: var(--f-display); font-size: 1.05rem; }
+.need span { color: var(--muted); font-size: 0.92rem; }
+.need .cost { font: 600 0.72rem/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ok); margin-top: 6px; }
+
+/* Map */
+.map { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 14px; }
+.lane { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.node { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 0.9rem; background: var(--bg); }
+.node.home { border-color: var(--accent); background: var(--accent-soft); }
+.arrow { color: var(--muted); font-family: var(--f-mono); }
+
+/* Steps with progress rail */
+.steps { display: grid; gap: 0; counter-reset: step; }
+.step { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 20px; }
+.rail { display: grid; grid-template-rows: auto 1fr; justify-items: center; }
+.num { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 700 1rem/1 var(--f-display); background: var(--surface); border: 2px solid var(--line); color: var(--muted); transition: background .2s, border-color .2s, color .2s; }
+.step.done .num { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.line { width: 2px; background: var(--line); margin-block: 6px; }
+.step:last-child .line { visibility: hidden; }
+.body { padding-bottom: 44px; display: grid; gap: 14px; min-width: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tag { font: 600 0.7rem/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 8px; border-radius: 6px; }
+.tag.you { background: var(--warn-soft); color: var(--warn); }
+.tag.auto { background: var(--accent-soft); color: var(--accent); }
+.tag.time { color: var(--muted); padding-inline: 0; }
+.where { font-size: 0.92rem; color: var(--muted); }
+
+ol.do { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 65ch; }
+
+.cmd { position: relative; background: var(--code-bg); color: var(--code-fg); border-radius: 10px; font: 0.86rem/1.55 var(--f-mono); }
+.cmd pre { margin: 0; padding: 14px 92px 14px 16px; overflow-x: auto; white-space: pre; }
+.cmd .label { position: absolute; top: -9px; left: 12px; font: 600 0.65rem/1 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; background: var(--code-bg); color: #8fb0d0; padding: 3px 6px; border-radius: 4px; }
+.copy { position: absolute; top: 8px; right: 8px; font: 600 0.75rem/1 var(--f-body); background: #22313f; color: #d8e4ee; border: 1px solid #34485a; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.copy:hover { background: #2c3f52; }
+.copy:focus-visible, .check input:focus-visible, summary:focus-visible, .theme:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.callout { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 0.95rem; max-width: 70ch; }
+.callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+
+.check { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+.check input { width: 20px; height: 20px; accent-color: var(--ok); margin-top: 3px; flex: none; }
+.check span { font-size: 0.95rem; }
+.check b { color: var(--ok); }
+.step.done .check { border-style: solid; border-color: var(--ok); }
+
+/* Progress bar */
+.progress { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; border-bottom: 1px solid var(--line); }
+.bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+.progress small { font: 600 0.75rem/1 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.theme { font: 600 0.75rem/1 var(--f-body); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+
+/* Rules + troubleshooting */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.rule { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--warn); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; }
+.rule b { font-family: var(--f-display); }
+.rule span { color: var(--muted); font-size: 0.93rem; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+details + details { margin-top: 8px; }
+summary { padding: 14px 16px; cursor: pointer; font-weight: 700; }
+details > div { padding: 0 16px 16px; display: grid; gap: 8px; color: var(--ink); }
+details > div p { color: var(--muted); }
+footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 20px; }
+
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .step { grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; }
+  .num { width: 32px; height: 32px; font-size: 0.9rem; }
+  .cmd pre { padding-right: 16px; padding-top: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="stack">
+      <span class="eyebrow">Gremlin the Friend · setup guide for Windows 11</span>
+      <h1>A friendly gremlin that lives in your PC.</h1>
+      <p class="lede">You talk to it on Signal. It keeps your calendar and to-do list and reminds you of things. It only answers you, and it never leaves home.</p>
+      <p class="where">About 2 hours in total, most of it waiting for installs. Claude Code does the typing; you do the clicking. Free and open source on <a href="https://github.com/Yotamrozin/gremlin-the-friend" target="_blank" rel="noopener">GitHub</a>.</p>
+    </div>
+    <div class="chat" aria-label="Example conversation">
+      <span class="who">You and your gremlin</span>
+      <div class="bubble me">Dentist Tuesday the 14th at 3pm</div>
+      <div class="bubble bot">The 14th is a Wednesday. Did you mean Wednesday the 14th, or Tuesday the 13th?</div>
+      <div class="bubble me">Wednesday. And remind me to buy a birthday card tomorrow at 9</div>
+      <div class="bubble bot">Added "Dentist", Wed 14 Oct, 15:00. Reminder set for tomorrow 09:00.</div>
+    </div>
+  </header>
+
+  <nav class="progress" aria-label="Setup progress">
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="9" aria-valuenow="0" id="bar"><i id="barFill"></i></div>
+    <small id="count">0 / 9 steps</small>
+    <button class="theme" id="theme" type="button">Theme</button>
+  </nav>
+
+  <section class="stack-lg">
+    <div class="stack">
+      <span class="eyebrow">Before you start</span>
+      <h2>What you need</h2>
+      <p>Get these sorted first. Everything else is in this project.</p>
+    </div>
+    <div class="needs">
+      <div class="need"><b>A Windows 11 PC</b><span>Usually on. The bot sleeps when the PC sleeps.</span><span class="cost">Have it</span></div>
+      <div class="need"><b>A second phone number</b><span>With Signal installed. This becomes the bot. An eSIM, a prepaid SIM or an old phone all work. Never use your own number.</span><span class="cost">A few £ a month</span></div>
+      <div class="need"><b>Claude Pro (or higher)</b><span>The bot's brain. Sign up at claude.ai.</span><span class="cost">Subscription</span></div>
+      <div class="need"><b>A calendar (your choice)</b><span>By default it lives on your own PC. You can pick iCloud, Fastmail or another provider in step 8.</span><span class="cost">Free by default</span></div>
+      <div class="need"><b>Tailscale</b><span>A private network between your PC and your phone. Sign up at tailscale.com.</span><span class="cost">Free</span></div>
+      <div class="need"><b>This project</b><span>On GitHub, choose Code → Download ZIP, and unzip it somewhere easy, like <code>Documents</code>.</span><span class="cost">Free</span></div>
+    </div>
+  </section>
+
+  <section class="stack-lg">
+    <div class="stack">
+      <span class="eyebrow">How it fits together</span>
+      <h2>Nothing is open to the internet</h2>
+    </div>
+    <div class="map" aria-label="Diagram of the setup">
+      <div class="lane"><span class="node">Your Signal</span><span class="arrow">→</span><span class="node">Bot's number</span><span class="arrow">→</span><span class="node home">Your PC: the assistant</span><span class="arrow">→</span><span class="node">Claude</span></div>
+      <div class="lane"><span class="node home">Your PC: tasks and calendar server</span><span class="arrow">↔ private Tailscale link ↔</span><span class="node">Tasks.org and Calendula on your phone</span></div>
+      <div class="lane"><span class="arrow">or, if you prefer:</span><span class="node home">Your PC</span><span class="arrow">↔</span><span class="node">iCloud, Fastmail or another calendar</span></div>
+    </div>
+  </section>
+
+  <section class="stack-lg">
+    <div class="stack">
+      <span class="eyebrow">The setup</span>
+      <h2>Nine steps</h2>
+      <p>Tick each step when its check passes. Your ticks are saved in this browser.</p>
+      <div class="meta"><span class="tag you">You</span><span class="where">something only you can do: a click, a password, a scan</span></div>
+      <div class="meta"><span class="tag auto">Claude Code</span><span class="where">Claude Code runs it for you and explains as it goes</span></div>
+    </div>
+
+    <div class="steps" id="steps">
+
+      <article class="step" data-step="1">
+        <div class="rail"><span class="num">1</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag you">You</span><span class="tag time">10 min + restart</span></div>
+          <h3>Turn on Linux inside Windows (WSL)</h3>
+          <ol class="do">
+            <li>Press Start, type <b>PowerShell</b>, right-click it and choose <b>Run as administrator</b>.</li>
+            <li>Paste this and press Enter, then restart the PC when it finishes.</li>
+          </ol>
+          <div class="cmd"><span class="label">Admin PowerShell</span><pre>wsl --install</pre><button class="copy" type="button">Copy</button></div>
+          <ol class="do" start="3">
+            <li>After the restart, an <b>Ubuntu</b> window opens. Pick a username (lowercase, no spaces) and a password. Write the password down; you'll type it often.</li>
+          </ol>
+          <div class="callout">If Ubuntu doesn't finish installing, run <code>wsl --install -d Ubuntu</code> in the admin window again.</div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> an Ubuntu window shows a prompt like <code>you@PC:~$</code>.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="2">
+        <div class="rail"><span class="num">2</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag you">You</span><span class="tag time">10 min</span></div>
+          <h3>Install Tailscale and Claude Code on Windows</h3>
+          <ol class="do">
+            <li>Install <b>Tailscale</b> on the PC and sign in. Install it on your phone too, sign in with the same account, and turn on <b>Always-on VPN</b> for it (Android: Settings → Network → VPN → Tailscale → gear icon).</li>
+            <li>Install <b>Claude Code</b> from <a href="https://claude.com/claude-code" target="_blank" rel="noopener">claude.com/claude-code</a> and sign in with your Claude account.</li>
+            <li>Open Claude Code in the <code>gremlin-the-friend-main</code> folder you unzipped.</li>
+          </ol>
+          <div class="cmd"><span class="label">Admin PowerShell (Tailscale)</span><pre>winget install --id Tailscale.Tailscale -e</pre><button class="copy" type="button">Copy</button></div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> the Tailscale app shows your PC and your phone, and Claude Code is open in the kit folder.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="3">
+        <div class="rail"><span class="num">3</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag you">You</span><span class="tag time">1 min</span></div>
+          <h3>Hand over to Claude Code</h3>
+          <p>Paste this into Claude Code. From here on it runs the steps and tells you exactly when it needs you. Steps 4 to 9 below show what will happen, so you can follow along.</p>
+          <div class="cmd"><span class="label">Paste into Claude Code</span><pre>I want to set up the private Signal assistant in this folder on my Windows PC.
+
+Read README.md and GUIDE.md first. GUIDE.md is the source of truth, including its
+"Known problems" section. Then walk me through the setup one step at a time, in this order:
+WSL/Ubuntu, Windows autostart, then linux/01 to 06.
+
+How to work with me:
+- I'm not a developer. Explain each step in one or two plain sentences before running it.
+- Anything that needs sudo, an administrator window, a QR scan, a browser login or a password
+  is something I do myself. Tell me exactly what to type or click, and wait for me to say done.
+- Never ask me to paste a password, app password, token, code or QR link into this chat.
+  The scripts ask for them in hidden prompts.
+- Never run `signal-cli receive` or start a second signal-cli daemon.
+- After each step, check that it worked (the guide says how) before moving on.
+- If something fails, look it up in GUIDE.md's "Known problems" section before trying anything new.
+  Don't stack fixes: if a change broke something, undo it first.
+- Never restart the gateway or kill processes without telling me first.
+
+Start by checking whether WSL and Ubuntu are already installed.</pre><button class="copy" type="button">Copy</button></div>
+          <div class="callout"><b>Never paste a password into Claude Code</b>, or into any chat. When a script needs one, it asks in the Ubuntu window and hides what you type.</div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> Claude Code has read the guide and is talking you through step 4.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="4">
+        <div class="rail"><span class="num">4</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag you">You</span><span class="tag time">2 min</span></div>
+          <h3>Keep the assistant running</h3>
+          <p>Windows switches Linux off when nothing is using it. This adds three hidden background tasks that keep it on, and a <b>Start OpenClaw</b> shortcut on your Desktop for emergencies. It doesn't stop your PC from sleeping.</p>
+          <div class="cmd"><span class="label">Admin PowerShell, in the kit's windows folder</span><pre>powershell -ExecutionPolicy Bypass -File .\setup-autostart.ps1</pre><button class="copy" type="button">Copy</button></div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> it lists three "OpenClaw" tasks and says "Done".</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="5">
+        <div class="rail"><span class="num">5</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag auto">Claude Code</span><span class="tag you">You: password, browser login</span><span class="tag time">20 min</span></div>
+          <h3>Install the assistant</h3>
+          <p>The script installs the assistant, the Signal connector, the tasks server and Tailscale inside Ubuntu. You type your Ubuntu password when asked, and approve the Tailscale login in your browser. Then you sign in to Claude in the browser.</p>
+          <div class="cmd"><span class="label">Ubuntu</span><pre>cd "/mnt/c/Users/YOU/Documents/gremlin-the-friend-main/linux"
+bash 01-install.sh
+source ~/.bashrc
+claude auth login
+bash 02-onboard.sh</pre><button class="copy" type="button">Copy</button></div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> the last script shows <code>Listening: 127.0.0.1:18789</code>, which means the assistant is only reachable from your own PC.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="6">
+        <div class="rail"><span class="num">6</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag auto">Claude Code</span><span class="tag you">You: scan a QR</span><span class="tag time">5 min</span></div>
+          <h3>Connect the bot's Signal</h3>
+          <ol class="do">
+            <li>The script shows a QR code in the Ubuntu window.</li>
+            <li>On the <b>bot's</b> phone, open Signal → Settings → Linked devices → <b>+</b>, and scan it.</li>
+            <li>Type the bot's number, then <b>your own</b> number, in international format (+44…). Only your number will be able to talk to the bot.</li>
+          </ol>
+          <div class="cmd"><span class="label">Ubuntu</span><pre>bash 03-signal.sh</pre><button class="copy" type="button">Copy</button></div>
+          <div class="callout">The QR code is a one-time key to the bot's account. Don't photograph it or share it.</div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> from your personal Signal, message the bot "hi". It answers within a minute.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="7">
+        <div class="rail"><span class="num">7</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag auto">Claude Code</span><span class="tag you">You: one click, phone app</span><span class="tag time">10 min</span></div>
+          <h3>Your private server for tasks and calendar</h3>
+          <p>This sets up a small server on your PC that only your devices can reach. It holds your to-do lists, and your calendar too if you choose that in step 8.</p>
+          <div class="cmd"><span class="label">Ubuntu</span><pre>bash 04-tasks-server.sh</pre><button class="copy" type="button">Copy</button></div>
+          <ol class="do">
+            <li>If the script prints a Tailscale link, open it and click <b>Enable</b>. In the Tailscale admin page under <b>DNS</b>, make sure <b>HTTPS Certificates</b> is on. Then run the script again.</li>
+            <li>On your phone, install <b>Tasks.org</b> from F-Droid. Choose Add account → <b>CalDAV</b>, and enter the server address and username the script printed.</li>
+            <li>For the password, show it in the Ubuntu window with <code>cat ~/.config/radicale/password.txt</code>. Save it in your password manager.</li>
+          </ol>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> the script says <b>207</b>, and Tasks.org connects without errors.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="8">
+        <div class="rail"><span class="num">8</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag auto">Claude Code</span><span class="tag you">You: choose where your calendar lives</span><span class="tag time">10 min</span></div>
+          <h3>Calendar and tasks for the bot</h3>
+          <p>The script asks where your calendar should live. If you're not sure, choose 1. You can switch later by running it again.</p>
+          <div class="needs">
+            <div class="need"><b>1 · On your PC</b><span>Nothing to sign up for. Syncs while the PC is awake; your phone works offline in between. No email invitations.</span><span class="cost">Free · default</span></div>
+            <div class="need"><b>2 · iCloud</b><span>Needs an Apple account and an app-specific password (account.apple.com → Sign-In and Security). Works on Android.</span><span class="cost">Free</span></div>
+            <div class="need"><b>3 · Fastmail</b><span>Invitations, a web calendar, and syncing even when the PC is off. Needs an app password (Settings → Privacy &amp; Security).</span><span class="cost">Paid</span></div>
+            <div class="need"><b>4 · Another provider</b><span>Nextcloud, Disroot, mailbox.org, Posteo, Zoho, or anything else with a "CalDAV address".</span><span class="cost">Free to cheap</span></div>
+          </div>
+          <div class="cmd"><span class="label">Ubuntu</span><pre>bash 05-plugins.sh</pre><button class="copy" type="button">Copy</button></div>
+          <ol class="do">
+            <li>For options 2 to 4, type the <b>app password</b> into the hidden prompt. Never use your main password.</li>
+            <li>In Signal, send the bot <code>/new</code> so it picks up its new tools.</li>
+          </ol>
+          <div class="callout ok"><b>On your phone:</b> install <b>DAVx5</b> and <b>Calendula</b> from F-Droid. In DAVx5, add an account: for option 1, use the same address, username and password as Tasks.org; otherwise, use your provider's. Your calendar then appears in Calendula. Google Calendar and Outlook aren't supported, but you can move your events out of them: export from Google Calendar on a computer (Settings → Import &amp; export), then import the file into your new calendar.</div>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> ask the bot "What's on my calendar this week?" and "Add a task: buy milk". The task shows up in Tasks.org.</span></label>
+        </div>
+      </article>
+
+      <article class="step" data-step="9">
+        <div class="rail"><span class="num">9</span><span class="line"></span></div>
+        <div class="body">
+          <div class="meta"><span class="tag auto">Claude Code</span><span class="tag you">You: three settings</span><span class="tag time">15 min</span></div>
+          <h3>Lock it down and back it up</h3>
+          <p>This switches off features you don't need, gives the bot its rulebook, makes its files private, and saves a backup every night. Point the backup at a Dropbox or OneDrive folder to get a copy off the PC.</p>
+          <div class="cmd"><span class="label">Ubuntu</span><pre>bash 06-harden.sh "/mnt/c/Users/YOU/Dropbox/openclaw-backups"</pre><button class="copy" type="button">Copy</button></div>
+          <ol class="do">
+            <li><b>claude.ai</b> → Settings → Data privacy controls: turn model training <b>off</b>.</li>
+            <li><b>Windows Security</b> → Device security → Core isolation: turn <b>Memory Integrity</b> on.</li>
+            <li><b>BitLocker</b> (encrypts your disk): search "Manage BitLocker" in Start and turn it on. Save the recovery key in your password manager. The PC is slower until the first encryption finishes.</li>
+          </ol>
+          <label class="check"><input type="checkbox"><span><b>Check:</b> a backup file appears in your backup folder. Send the bot <code>/new</code> and ask "remind me in 2 minutes to stretch".</span></label>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="stack-lg">
+    <div class="stack">
+      <span class="eyebrow">Keep it private</span>
+      <h2>The rules for keeping a gremlin</h2>
+    </div>
+    <div class="rules">
+      <div class="rule"><b>Never feed it passwords</b><span>Not in a chat with your gremlin, with Claude Code, or with any AI. If one slips through, change that password.</span></div>
+      <div class="rule"><b>Keep it out of the sunlight</b><span>It stays off the open internet. Only your own devices can reach it, over Tailscale.</span></div>
+      <div class="rule"><b>Don't let strangers talk to it</b><span>It answers only your number, and groups are switched off.</span></div>
+      <div class="rule"><b>Don't steal its mail</b><span>Each Signal message can be picked up only once. Never run <code>signal-cli receive</code> yourself.</span></div>
+      <div class="rule"><b>It can't delete without your yes</b><span>Before it removes an event or task, you confirm that specific item.</span></div>
+    </div>
+  </section>
+
+  <section class="stack-lg">
+    <div class="stack">
+      <span class="eyebrow">If something goes wrong</span>
+      <h2>Troubleshooting</h2>
+      <p>Tell Claude Code what you see. It has the full list in GUIDE.md. These are the usual suspects.</p>
+    </div>
+    <div>
+      <details><summary>The bot doesn't answer at all</summary><div>
+        <p>Double-click <b>Start OpenClaw</b> on your Desktop and wait a minute. If the shortcut says "down" but the bot replies, trust the bot. If it's still silent, run this in an admin PowerShell:</p>
+        <div class="cmd"><pre>Start-ScheduledTask -TaskName "OpenClaw Keepalive"</pre><button class="copy" type="button">Copy</button></div>
+      </div></details>
+      <details><summary>The bot's phone shows my message, but the bot never answers</summary><div>
+        <p>Something else picked up the message first, usually a manual <code>signal-cli receive</code>. Stop it and restart the assistant:</p>
+        <div class="cmd"><pre>systemctl --user restart openclaw-gateway</pre><button class="copy" type="button">Copy</button></div>
+        <p>Don't re-link the device. That's almost never the fix.</p>
+      </div></details>
+      <details><summary>The bot says a tool or option doesn't exist</summary><div>
+        <p>It's still using an old conversation. Send <code>/new</code> in Signal.</p>
+      </div></details>
+      <details><summary>Tasks.org: "CLEARTEXT communication not permitted"</summary><div>
+        <p>The server address must start with <code>https://</code> and end in <code>.ts.net/</code>. Use the exact address step 7 printed, not a number like 100.x.x.x.</p>
+      </div></details>
+      <details><summary>Tasks.org: "connection abort", spinning, or error 500, after it used to work</summary><div>
+        <p>First, check your PC is awake and the bot answers. If it doesn't, follow "The bot doesn't answer at all". Then open the Tailscale app on your phone. If it shows missing devices or "out of sync", sign out and back in. Also check Always-on VPN is on, and Private DNS is Off or Automatic.</p>
+      </div></details>
+      <details><summary>Step 8 says 401, or the bot can't reach my calendar</summary><div>
+        <p>The login was refused. It's usually the account's main password instead of an app password, or a typo in the email. Make a new app password and run <code>bash 05-plugins.sh</code> again.</p>
+      </div></details>
+      <details><summary>A window keeps flashing on screen</summary><div>
+        <p>A background task was set up without its "hidden" setting. Run step 4's script again in an admin PowerShell.</p>
+      </div></details>
+      <details><summary>"Access is denied" in PowerShell</summary><div>
+        <p>That window isn't an administrator window. Close it, right-click PowerShell, and choose <b>Run as administrator</b>.</p>
+      </div></details>
+      <details><summary>"Sudo is disabled on this machine" or "parameter 'fsSL'"</summary><div>
+        <p>A Linux command went into PowerShell. Run it in the <b>Ubuntu</b> window instead. Paste there with a right-click.</p>
+      </div></details>
+    </div>
+  </section>
+
+  <footer>Gremlin the Friend is an unofficial, MIT-licensed setup for <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener">OpenClaw</a>. It's not affiliated with OpenClaw, Signal, Anthropic or any calendar provider. Built from a real install on Windows 11 with OpenClaw 2026.9.6, October 2026. Version numbers move; when something here disagrees with what your screen says, your screen wins, so ask Claude Code. · <a href="https://github.com/Yotamrozin/gremlin-the-friend" target="_blank" rel="noopener">Source on GitHub</a></footer>
+</div>
+
+<script>
+(function () {
+  const KEY = "gremlin-steps";
+  const steps = [...document.querySelectorAll(".step")];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+
+  function render() {
+    const done = steps.filter(s => s.classList.contains("done")).length;
+    document.getElementById("barFill").style.width = (done / steps.length * 100) + "%";
+    document.getElementById("bar").setAttribute("aria-valuenow", done);
+    document.getElementById("count").textContent = done + " / " + steps.length + " steps";
+  }
+  steps.forEach(s => {
+    const box = s.querySelector(".check input");
+    const id = s.dataset.step;
+    box.id = "step-" + id;
+    if (saved[id]) { box.checked = true; s.classList.add("done"); }
+    box.addEventListener("change", () => {
+      s.classList.toggle("done", box.checked);
+      saved[id] = box.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+      render();
+    });
+  });
+  render();
+
+  document.querySelectorAll(".copy").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const pre = btn.parentElement.querySelector("pre");
+      const done = () => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1500); };
+      const fallback = () => { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "Press Ctrl+C"; };
+      if (navigator.clipboard) navigator.clipboard.writeText(pre.innerText).then(done, fallback); else fallback();
+    });
+  });
+
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("gremlin-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("gremlin-theme", root.dataset.theme); } catch (e) {}
+  });
+})();
+</script>
