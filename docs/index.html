@@ -127,6 +127,7 @@ ol.do { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 65ch
 .rule { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--warn); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; }
 .rule b { font-family: var(--f-display); }
 .rule span { color: var(--muted); font-size: 0.93rem; }
+.rule.priv-ok { border-top-color: var(--ok); }
 details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 details + details { margin-top: 8px; }
 summary { padding: 14px 16px; cursor: pointer; font-weight: 700; }
@@ -149,7 +150,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
     <div class="stack">
       <span class="eyebrow">Gremlin the Friend · setup guide for Windows 11</span>
       <h1>A friendly gremlin that lives in your PC.</h1>
-      <p class="lede">You talk to it on Signal. It keeps your calendar and to-do list and reminds you of things. It only answers you, and it never leaves home.</p>
+      <p class="lede">You talk to it on Signal. It keeps your calendar and to-do list and reminds you of things. It only answers you, it's never exposed to the internet, and your calendar and tasks are stored on your own devices.</p>
       <p class="where">About 2 hours in total, most of it waiting for installs. Claude Code does the typing; you do the clicking. Free and open source on <a href="https://github.com/Yotamrozin/gremlin-the-friend" target="_blank" rel="noopener">GitHub</a>.</p>
     </div>
     <div class="chat" aria-label="Example conversation">
@@ -176,7 +177,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
     <div class="needs">
       <div class="need"><b>A Windows 11 PC</b><span>Usually on. The bot sleeps when the PC sleeps.</span><span class="cost">Have it</span></div>
       <div class="need"><b>A second phone number</b><span>With Signal installed. This becomes the bot. An eSIM, a prepaid SIM or an old phone all work. Never use your own number.</span><span class="cost">A few £ a month</span></div>
-      <div class="need"><b>Claude Pro (or higher)</b><span>The bot's brain. Sign up at claude.ai.</span><span class="cost">Subscription</span></div>
+      <div class="need"><b>Claude Pro (or higher)</b><span>The bot's brain. Your conversations with it are processed by Anthropic (see "What stays private" below). Sign up at claude.ai.</span><span class="cost">Subscription</span></div>
       <div class="need"><b>A calendar (your choice)</b><span>By default it lives on your own PC. You can pick iCloud, Fastmail or another provider in step 8.</span><span class="cost">Free by default</span></div>
       <div class="need"><b>Tailscale</b><span>A private network between your PC and your phone. Sign up at tailscale.com.</span><span class="cost">Free</span></div>
       <div class="need"><b>This project</b><span>On GitHub, choose Code → Download ZIP, and unzip it somewhere easy, like <code>Documents</code>.</span><span class="cost">Free</span></div>
@@ -193,6 +194,20 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
       <div class="lane"><span class="node home">Your PC: tasks and calendar server</span><span class="arrow">↔ private Tailscale link ↔</span><span class="node">Tasks.org and Calendula on your phone</span></div>
       <div class="lane"><span class="arrow">or, if you prefer:</span><span class="node home">Your PC</span><span class="arrow">↔</span><span class="node">iCloud, Fastmail or another calendar</span></div>
     </div>
+  </section>
+
+  <section class="stack-lg" id="privacy">
+    <div class="stack">
+      <span class="eyebrow">Be clear-eyed</span>
+      <h2>What stays private, and what doesn't</h2>
+      <p>Your gremlin is private from the internet and from strangers. Its brain, Claude, is not on your PC, so your conversations aren't private from Anthropic.</p>
+    </div>
+    <div class="rules">
+      <div class="rule priv-ok"><b>Stays on your devices</b><span>Your calendar and tasks (if kept on your PC, the default), the gremlin's notes about you, its settings and Signal keys, and your backups unless you sync them to Dropbox or OneDrive.</span></div>
+      <div class="rule"><b>Goes to Anthropic</b><span>Every message you send, plus whatever the gremlin reads to answer it: events, tasks, notes. With model training switched off, it's kept for 30 days and not trained on. With it on, up to 5 years. Step 9 has you switch it off.</span></div>
+      <div class="rule priv-ok"><b>Passes through, encrypted</b><span>Signal carries your messages end-to-end encrypted. Tailscale connects your devices, and the traffic between them is encrypted end to end.</span></div>
+    </div>
+    <p class="where">Claude Code is only the installer. It sees the setup, not your daily chats. A fully local brain, so nothing leaves your devices, is planned.</p>
   </section>
 
   <section class="stack-lg">

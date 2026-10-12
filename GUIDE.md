@@ -26,6 +26,7 @@ Your phone: Tasks.org ──► Radicale over Tailscale.   DAVx5 + Calendula ─
 Google Calendar, Outlook/Microsoft 365, Proton and Tuta are **not supported**. Google and Microsoft would need a separate OAuth plugin; Proton and Tuta have no CalDAV access at all.
 
 - **Nothing is exposed to the internet.** The gateway listens only on `127.0.0.1`. Radicale listens only on the Tailscale address, which only your own devices can reach.
+- **The brain is not local.** Every message, and whatever the agent reads to answer it (events, tasks, workspace notes), is sent to Anthropic. With training off, Anthropic keeps conversations for 30 days; with it on, for up to 5 years, and uses them for training. Don't describe this setup as "nothing leaves your devices". That's true of storage, not of conversations. See the README's "What stays private" section.
 - **Windows keeps WSL alive.** WSL2 shuts Ubuntu down when nothing is attached to it, so three hidden scheduled tasks keep one tiny process attached (step B).
 
 ## A. WSL and Ubuntu (Windows, administrator)
