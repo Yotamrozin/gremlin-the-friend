@@ -14,7 +14,7 @@
 
 ## Self-check (scheduled heartbeat)
 - Run `openclaw gateway status --deep` and confirm the gateway listens on 127.0.0.1:18789 only
-- Run `openclaw plugins list` and flag anything enabled beyond: anthropic, signal, memory-core, calendar, tasks
+- Run `openclaw plugins list` and flag anything enabled beyond: anthropic, ollama, signal, memory-core, calendar, tasks
 - Report any outbound network call to a domain not seen before
 - Report only deviations
 

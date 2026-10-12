@@ -8,7 +8,7 @@ KIT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$HOME/.openclaw/workspace"
 
 echo "==> Turn off plugins this setup doesn't use"
-keep=" anthropic signal memory-core calendar tasks "
+keep=" anthropic ollama signal memory-core calendar tasks "   # anthropic/ollama: brain providers
 for id in $(openclaw plugins list --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(p["id"] for p in json.load(sys.stdin)["plugins"] if p.get("enabled")))'); do
   [[ "$keep" == *" $id "* ]] || openclaw plugins disable "$id" || true
 done
@@ -74,6 +74,6 @@ echo "==> Restart the bot so the new settings apply"
 systemctl --user restart openclaw-gateway
 echo
 echo "Step 6 done. Two things only you can do (see the guide, 'Privacy checklist'):"
-echo "  1. claude.ai > Settings > Data privacy controls: turn model training OFF."
+echo "  1. If your brain is Claude: claude.ai > Settings > Data privacy controls: turn model training OFF."
 echo "  2. Windows: turn on BitLocker and Memory Integrity."
 echo "In Signal, send the bot /new so it reads its new rulebook."

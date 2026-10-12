@@ -20,8 +20,8 @@ npm config set prefix "$HOME/.npm-global"
 grep -q 'npm-global/bin' ~/.bashrc || echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
-echo "==> OpenClaw and Claude Code"
-npm install -g openclaw@latest @anthropic-ai/claude-code
+echo "==> OpenClaw"
+npm install -g openclaw@latest
 
 echo "==> signal-cli $SIGNAL_CLI_VERSION (native build; the binary sits at the archive root)"
 if ! signal-cli --version 2>/dev/null | grep -q "$SIGNAL_CLI_VERSION"; then
@@ -44,6 +44,6 @@ sudo tailscale up --hostname="$(hostname)-wsl" --accept-routes --reset
 sudo tailscale set --operator="$USER"
 
 echo
-node -v; openclaw --version; claude --version; signal-cli --version
+node -v; openclaw --version; signal-cli --version
 echo
-echo "Step 1 done. Next: run 'source ~/.bashrc', then 'claude auth login', then 'bash 02-onboard.sh'."
+echo "Step 1 done. Next: run 'source ~/.bashrc', then 'bash 02-onboard.sh'."

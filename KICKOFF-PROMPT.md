@@ -7,7 +7,8 @@ I want to set up the private Signal assistant in this folder on my Windows PC.
 
 Read README.md and GUIDE.md first. GUIDE.md is the source of truth, including its
 "Known problems" section. Then walk me through the setup one step at a time, in this order:
-WSL/Ubuntu, Windows autostart, then linux/01 to 06.
+WSL/Ubuntu, Windows autostart, linux/01 and 02, then linux/brain.sh (help me choose a brain: show me the privacy ratings and,
+  for the local option, what my PC can handle), then linux/03 to 06.
 
 How to work with me:
 - I'm not a developer. Explain each step in one or two plain sentences before running it.

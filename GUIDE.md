@@ -8,7 +8,7 @@ Verified on: Windows 11 25H2, WSL 2.7, Ubuntu, Node 24.21, OpenClaw 2026.9.6, Cl
 
 ```
 Your phone (Signal) ──► bot's Signal account ──► signal-cli (in WSL) ──► OpenClaw gateway (127.0.0.1 only)
-                                                                         ├─ Claude (the brain)
+                                                                         ├─ the brain: your choice (local Ollama, Ollama Cloud, Claude)
                                                                          ├─ calendar plugin ──► your choice: Radicale (default), iCloud, Fastmail, any CalDAV
                                                                          └─ tasks plugin ──► Radicale (in WSL, HTTPS over Tailscale)
 Your phone: Tasks.org ──► Radicale over Tailscale.   DAVx5 + Calendula ──► wherever the calendar lives.
@@ -26,7 +26,7 @@ Your phone: Tasks.org ──► Radicale over Tailscale.   DAVx5 + Calendula ─
 Google Calendar, Outlook/Microsoft 365, Proton and Tuta are **not supported**. Google and Microsoft would need a separate OAuth plugin; Proton and Tuta have no CalDAV access at all.
 
 - **Nothing is exposed to the internet.** The gateway listens only on `127.0.0.1`. Radicale listens only on the Tailscale address, which only your own devices can reach.
-- **The brain is not local.** Every message, and whatever the agent reads to answer it (events, tasks, workspace notes), is sent to Anthropic. With training off, Anthropic keeps conversations for 30 days; with it on, for up to 5 years, and uses them for training. Don't describe this setup as "nothing leaves your devices". That's true of storage, not of conversations. See the README's "What stays private" section.
+- **Where conversations go depends on the brain (step D2).** Every message, and whatever the agent reads to answer it (events, tasks, workspace notes), goes to the brain. Only the local brain keeps that on the PC. With any cloud brain, "nothing leaves your devices" is true of storage, not of conversations, so don't describe it that way.
 - **Windows keeps WSL alive.** WSL2 shuts Ubuntu down when nothing is attached to it, so three hidden scheduled tasks keep one tiny process attached (step B).
 
 ## A. WSL and Ubuntu (Windows, administrator)
@@ -66,7 +66,7 @@ The tasks don't keep the PC awake. While the PC sleeps, the bot is offline; it c
 
 ## C. Install — `linux/01-install.sh`
 
-The script installs Node 24, sets up a user-owned npm folder, installs OpenClaw and Claude Code, signal-cli (the native build), Radicale (via pipx) and Tailscale, enables linger, and joins Ubuntu to Tailscale (a browser login).
+The script installs Node 24, sets up a user-owned npm folder, installs OpenClaw, signal-cli (the native build), Radicale (via pipx) and Tailscale, enables linger, and joins Ubuntu to Tailscale (a browser login).
 
 - **Node must be `>=24.16 <25` or `>=26.1`.** Node 22 and Node 24.15 are both too old.
 - **The npm prefix lives at `~/.npm-global`**, because the system folder gives `EACCES`.
@@ -74,20 +74,53 @@ The script installs Node 24, sets up a user-owned npm folder, installs OpenClaw 
 - **Don't add `--advertise-tags`** to `tailscale up`. It fails unless the tag exists in your ACLs.
 - Before running it, install **Tailscale on Windows and the phone** too. On Windows: `winget install --id Tailscale.Tailscale -e`. On Android, turn on **Always-on VPN** for Tailscale (Settings → Network → VPN), and keep **Private DNS** off or on Automatic.
 
-When it finishes, run `source ~/.bashrc`, then `claude auth login` (a browser login).
+When it finishes, run `source ~/.bashrc`.
 
 ## D. Onboard — `linux/02-onboard.sh`
 
-The script runs onboarding non-interactively with `--auth-choice anthropic-cli --gateway-bind loopback --gateway-port 18789 --install-daemon`.
+The script runs onboarding non-interactively with `--auth-choice skip --gateway-bind loopback --gateway-port 18789 --install-daemon`. The brain is chosen separately in step D2.
 
 To check it: `openclaw gateway status --deep` shows `Listening: 127.0.0.1:18789` and `Connectivity probe: ok`. The probe can time out for about 30 seconds after a restart.
 
-- **Onboarding may offer a Codex or OpenAI device login.** Not needed; this kit uses `claude auth login`.
+- **Onboarding may offer a Codex or OpenAI device login.** Not needed; `brain.sh` sets up the brain.
 - **"Another onboarding operation is running (pid N)"** means a stale lock. Check it with `ps -fp N`, then `kill N` and re-run.
 - **`ECONNREFUSED 127.0.0.1:18789`** means linger isn't enabled: run `sudo loginctl enable-linger $USER`, then restart the gateway.
 - **`StateDatabaseCoordinatorContentionError`** means someone started the gateway by hand alongside the service. Run it only through systemd. Fix with `openclaw doctor --fix`, then `systemctl --user restart openclaw-gateway`.
 - **The local web UI asks for a token.** Get it with `openclaw gateway auth-token --show`.
 - **The workspace is `~/.openclaw/workspace`.** Don't create a second one.
+
+## D2. The brain — `linux/brain.sh`
+
+The brain is the AI model that reads your messages and decides what to do. Run `brain.sh` after onboarding, and again whenever you want to switch. Privacy ratings are from ●○○○○ (least) to ●●●●● (most).
+
+| Option | Privacy | What happens to your conversations | Cost | Quality and speed |
+|---|---|---|---|---|
+| **1. Local** (Ollama on this PC) | ●●●●● | Never leave the PC. | Free | Depends on the PC. With an NVIDIA card with 8 GB or more, usable for everyday requests. Without one, slow (a minute or more per reply) and more mistakes. |
+| **2. Ollama Cloud** | ●●●○○ | Ollama says prompts are processed and discarded, never stored or trained on. Mostly US servers. | Free with 5-hourly and weekly limits, or $20/month | Good. Default model `deepseek-v4-flash` (open weights). |
+| **3. Claude** (Anthropic) | ●●○○○ | Kept 30 days with model training switched off; up to 5 years and used for training if on (the default for new accounts). | Claude Pro subscription | Best. Default model `claude-haiku-4-5` via Claude Code. |
+
+How it works:
+- **Cloud API keys are typed into a hidden prompt** and kept in OpenClaw's secret store (`openclaw secrets store`), referenced from the config, never written into `openclaw.json`.
+- **Fallbacks are cleared.** If the chosen brain fails, the gremlin shows an error instead of quietly sending your data to another, less private brain.
+- **Local:** the script checks the RAM and NVIDIA video memory and picks a model: `gpt-oss:20b` with 12 GB+ VRAM, `qwen3:8b` with 8 GB, `qwen3:4b` on the processor only (with a warning). Ollama runs inside Ubuntu, bound to `127.0.0.1`, with models kept loaded for 30 minutes. On NVIDIA machines it adds `autoMemoryReclaim=disabled` to `.wslconfig`, because GPU models in WSL2 can otherwise make Windows restart WSL in a loop (from OpenClaw's Ollama troubleshooting docs). This takes effect after the next Windows restart.
+- **How big each call is:** measured on a real gremlin, about 15,000–20,000 tokens per model call (its instructions, tool list, workspace files and conversation). A typical request takes 2–4 calls. Keep the workspace lean: every `.md` file loaded there is resent on every call. With paid-per-token brains this drives the cost, and with free tiers it drives how fast you hit limits.
+- **Tried and dropped: Scaleway (EU).** Its privacy terms looked good, but:
+  - new accounts are rate-limited after about 4 quick calls until you pass a third-party ID check;
+  - OpenClaw misreads its `429 "INSUFFICIENT QUOTA"` as a billing error and locks the key for 10 minutes;
+  - Mistral Small on Scaleway also mishandled tool arguments, and `gpt-oss-120b` there only supports tools through the Responses API.
+
+  Any other OpenAI-compatible provider can still be added by hand as a custom provider (`models.providers.<id>` with `api: "openai-completions"`). Test that its rate-limit errors aren't misread as billing.
+- **Claude:** installs Claude Code inside Ubuntu if needed, and asks you to run `claude auth login` first.
+- **Faster local models:** LM Studio or llama.cpp can be noticeably faster than Ollama for models split between the graphics card and RAM. They aren't scripted here; OpenClaw supports both (`/providers/lmstudio`, `/plugins/llama-cpp` in its docs).
+- **After switching, send `/new` in Signal.**
+
+To check it: `openclaw models status` shows the new default model, and a "what's on my calendar?" message gets an answer.
+
+Problems:
+- **The secret store says an entry "was not found":** the key wasn't saved. Re-run `brain.sh`.
+- **Local: the first reply times out:** the model is still loading. `timeoutSeconds` is 300; wait and resend.
+- **Local: WSL keeps restarting after enabling the GPU brain:** restart Windows so the `.wslconfig` change applies. See OpenClaw's Ollama troubleshooting, "WSL2 crash loop".
+- **The gremlin replies with raw JSON or ignores its tools:** the model handles tools poorly. Switch to a bigger model or another brain.
 
 ## E. Signal — `linux/03-signal.sh`
 
@@ -175,7 +208,7 @@ To check it: `openclaw plugins list` shows both plugins enabled. In Signal, send
 ## H. Hardening and backups — `linux/06-harden.sh [backup-folder]`
 
 The script does the following:
-- Disables every plugin except `anthropic`, `signal`, `memory-core`, `calendar` and `tasks`. A default install enables about 30.
+- Disables every plugin except `anthropic` and `ollama` (brain providers), `signal`, `memory-core`, `calendar` and `tasks`. A default install enables about 30.
 - Installs `RULES.md` and adds the kit's rules to `AGENTS.md`.
 - Makes the workspace private and adds a systemd drop-in with `UMask=0077` and `DISABLE_ERROR_REPORTING=1`.
 - Sets up a daily 04:00 backup timer (`Persistent=true`, so a backup missed while the PC was off runs at next boot).
@@ -187,7 +220,7 @@ The script does the following:
 - If you edit the backup script from Windows (`\\wsl$`), it can lose its execute bit. Fix with `chmod 700`.
 
 **Privacy checklist (only the human can do these):**
-- [ ] On claude.ai, go to Settings → Data privacy controls and turn model training **off**.
+- [ ] If your brain is Claude: on claude.ai, go to Settings → Data privacy controls and turn model training **off**.
 - [ ] Turn on BitLocker (`Enable-BitLocker -MountPoint "C:" -EncryptionMethod XtsAes256 -UsedSpaceOnly -RecoveryPasswordProtector`, as administrator) and save the recovery key in a password manager.
   - The first encryption pass slows the PC. Pause it with `manage-bde -pause C:` and resume with `manage-bde -resume C:`.
 - [ ] Turn on Windows Security → Core isolation → **Memory Integrity**. It's compatible with WSL2.
