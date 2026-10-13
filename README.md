@@ -2,7 +2,7 @@
 
 *A self-hosted assistant that lives in your PC and talks to you on Signal.*
 
-Your gremlin keeps your calendar and to-do list and sends you reminders. It runs on your own Windows PC, answers only your phone number, and is never exposed to the internet. By default your calendar and tasks are stored on your own devices. You choose its brain: a local model, so nothing leaves your PC, or one of two cloud options, each with a privacy rating. See [What stays private](#what-stays-private-and-what-doesnt).
+Your gremlin keeps your calendar and to-do list and sends you reminders. It runs on your own Windows PC, answers only your phone number, and is never exposed to the internet. By default your calendar and tasks are stored on your own devices. You choose its brain: a local model, so nothing leaves your PC, or one of three cloud options, each with a privacy rating. See [What stays private](#what-stays-private-and-what-doesnt).
 
 **→ [Illustrated step-by-step guide](https://gremlin-the-friend.vercel.app)**
 
@@ -46,6 +46,7 @@ Prefer doing it by hand? Run [`windows/setup-autostart.ps1`](windows/setup-autos
 | Brain | Privacy | What happens to your conversations | Cost |
 |---|---|---|---|
 | **Local** (Ollama on your PC) | ●●●●● | Never leave your PC. | Free. Needs a strong PC: an NVIDIA card with 8 GB+ for a usable experience. |
+| **DeepInfra** | ●●●○○ | Zero data retention written into its Terms of Service; no training. US company. You trust their promise. | Pay per use, roughly $3–6 a month |
 | **Ollama Cloud** | ●●●○○ | Ollama says prompts are processed and discarded, no training. Mostly US servers. You trust their promise. | Free with limits, or $20/month |
 | **Claude** (Anthropic) | ●●○○○ | Kept 30 days with model training switched off; up to 5 years and used for training if on. | Claude Pro subscription |
 
@@ -72,7 +73,7 @@ Claude Code is only the installer. It sees the setup commands and their output, 
 
 ## Status
 
-This kit was built from one real install and tested on that machine. The scripts haven't yet been run end to end on a fresh PC, so expect rough edges. If something breaks, [GUIDE.md's "Known problems"](GUIDE.md#known-problems) is the first stop, and issues and pull requests are welcome.
+This kit was built from one real install and tested on that machine. The scripts haven't yet been run end to end on a fresh PC, so expect rough edges. Brains tested on a real gremlin: **DeepInfra** and **Claude**. **Local** and **Ollama Cloud** are set up by `brain.sh` but haven't been tested in daily use yet. If something breaks, [GUIDE.md's "Known problems"](GUIDE.md#known-problems) is the first stop, and issues and pull requests are welcome.
 
 ## License
 

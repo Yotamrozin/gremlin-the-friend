@@ -8,10 +8,23 @@ KIT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$HOME/.openclaw/workspace"
 
 echo "==> Turn off plugins this setup doesn't use"
-keep=" anthropic ollama signal memory-core calendar tasks "   # anthropic/ollama: brain providers
+keep=" anthropic ollama deepinfra signal memory-core calendar tasks "   # anthropic/ollama/deepinfra: brain providers
 for id in $(openclaw plugins list --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(p["id"] for p in json.load(sys.stdin)["plugins"] if p.get("enabled")))'); do
   [[ "$keep" == *" $id "* ]] || openclaw plugins disable "$id" || true
 done
+
+echo "==> Only the tools the gremlin uses, and a quiet heartbeat"
+# Measured on a real gremlin: 53 tools behind a search step cost an extra model call per request, and a
+# 30-minute heartbeat running inside the chat bloated every later call to ~76k tokens. These settings fix both.
+cat > /tmp/gremlin-tools.json <<'J'
+[{"path":"tools","value":{"profile":"minimal","toolSearch":false,"alsoAllow":[
+ "cron","read","write","edit","exec","memory_search","memory_get",
+ "calendar_list_calendars","calendar_create_calendar","calendar_list_events","calendar_create_event","calendar_delete_event",
+ "tasks_list_lists","tasks_create_list","tasks_list","tasks_create","tasks_complete","tasks_delete"]}},
+ {"path":"agents.defaults.heartbeat","value":{"every":"4h","isolatedSession":true}}]
+J
+openclaw config set --batch-file /tmp/gremlin-tools.json --replace
+rm -f /tmp/gremlin-tools.json
 
 echo "==> Rulebook for the bot"
 cp "$KIT/workspace/RULES.md" "$W/RULES.md"

@@ -214,6 +214,7 @@ footer { color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--lin
     </div>
     <div class="brains" aria-label="Brain options and privacy ratings">
       <div class="brain"><b>Local, on your PC</b><span class="dots" aria-label="Privacy 5 out of 5">●●●●●</span><span>Never leaves your PC. Free. Needs a strong PC (ideally an NVIDIA card with 8 GB+); slower and less capable than the cloud.</span></div>
+      <div class="brain"><b>DeepInfra</b><span class="dots" aria-label="Privacy 3 out of 5">●●●○○</span><span>Zero data retention written into its Terms of Service, no training. US company. Pay per use, roughly $3–6 a month. Tested on a real gremlin.</span></div>
       <div class="brain"><b>Ollama Cloud</b><span class="dots" aria-label="Privacy 3 out of 5">●●●○○</span><span>Says it processes and discards prompts, no training. Mostly US servers. Free with limits, or $20 a month.</span></div>
       <div class="brain"><b>Claude (Anthropic)</b><span class="dots" aria-label="Privacy 2 out of 5">●●○○○</span><span>Most capable. Kept 30 days with model training off; up to 5 years and used for training if on. Claude Pro subscription.</span></div>
     </div>
@@ -325,10 +326,11 @@ bash 02-onboard.sh</pre><button class="copy" type="button">Copy</button></div>
         <div class="body">
           <div class="meta"><span class="tag you">You: choose</span><span class="tag auto">Claude Code</span><span class="tag time">5–30 min</span></div>
           <h3>Choose your gremlin's brain</h3>
-          <p>The script shows the three options from <a href="#privacy">What stays private</a>, with their privacy ratings. For the local option, it checks what your PC can handle and warns you if it's too weak. You can switch any time by running it again.</p>
+          <p>The script shows the four options from <a href="#privacy">What stays private</a>, with their privacy ratings. For the local option, it checks what your PC can handle and warns you if it's too weak. You can switch any time by running it again.</p>
           <div class="cmd"><span class="label">Ubuntu</span><pre>bash brain.sh</pre><button class="copy" type="button">Copy</button></div>
           <ol class="do">
             <li><b>Local:</b> nothing to sign up for. The download is several GB.</li>
+            <li><b>DeepInfra:</b> create an account at deepinfra.com, add a card under Billing, create an API key, and type it into the hidden prompt.</li>
             <li><b>Ollama Cloud:</b> create a key at ollama.com → Settings → Keys, and type it into the hidden prompt.</li>
             <li><b>Claude:</b> run <code>claude auth login</code> when asked, and switch off model training at claude.ai → Settings → Data privacy controls.</li>
           </ol>

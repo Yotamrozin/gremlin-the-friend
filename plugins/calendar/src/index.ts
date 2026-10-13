@@ -76,6 +76,13 @@ function toISO(d: Date | undefined | null): string | undefined {
   return d ? d.toISOString() : undefined;
 }
 
+// All-day events are dates, not instants. Reported as UTC they shift to the previous day anywhere ahead of
+// UTC (Oct 14 in BST became "2026-10-13T23:00:00Z"), and models then dropped them from "tomorrow".
+function localDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // Reads the weekday directly from an ISO date string's own Y-M-D digits — deliberately not going through
 // timezone-dependent Date parsing, since the whole point is to be a reliable check independent of server
 // timezone config. Models are unreliable at mental day-of-week arithmetic; this is the hard check that
@@ -107,9 +114,11 @@ async function listEventsInCalendar(
   start: Date,
   end: Date,
 ): Promise<EventOutT[]> {
+  // Fetch a day wider on each side so timezone edges can't hide all-day events, then filter precisely below.
+  const DAY = 24 * 60 * 60 * 1000;
   const objects = await dav.fetchCalendarObjects({
     calendar: cal,
-    timeRange: { start: start.toISOString(), end: end.toISOString() },
+    timeRange: { start: new Date(start.getTime() - DAY).toISOString(), end: new Date(end.getTime() + DAY).toISOString() },
   });
   const events: EventOutT[] = [];
   for (const obj of objects) {
@@ -118,14 +127,25 @@ async function listEventsInCalendar(
     for (const key of Object.keys(parsed)) {
       const ev = parsed[key];
       if (!ev || ev.type !== "VEVENT") continue;
+      const allDay = Boolean(ev.start?.dateOnly);
+      const evEnd: Date = ev.end ?? ev.start;
+      // Keep only events overlapping the requested range. Recurring masters are kept as before (their own
+      // start date is the series start, not the occurrence).
+      if (!ev.rrule) {
+        const overlaps = allDay
+          ? localDate(ev.start) <= localDate(new Date(end.getTime() - 1)) && localDate(new Date(evEnd.getTime() - 1)) >= localDate(start)
+          : ev.start < end && evEnd > start;
+        if (!overlaps) continue;
+      }
       events.push({
         uid: String(ev.uid ?? key),
         summary: ev.summary ?? "(no title)",
-        start: toISO(ev.start)!,
-        end: toISO(ev.end),
-        allDay: Boolean(ev.start?.dateOnly),
+        start: allDay ? localDate(ev.start) : toISO(ev.start)!,
+        end: allDay ? localDate(new Date(evEnd.getTime() - 1)) : toISO(ev.end),
+        allDay,
         location: ev.location || undefined,
-        description: ev.description || undefined,
+        // Capped so a week's listing stays small for the model; the full text is rarely needed in a summary.
+        description: ev.description ? String(ev.description).slice(0, 300) + (String(ev.description).length > 300 ? "…" : "") : undefined,
         calendar: String(cal.displayName),
         url: obj.url,
       });
@@ -197,8 +217,12 @@ export default defineToolPlugin({
       description:
         "List calendar events in a date range (inclusive). Defaults to the next 7 days if no range given. " +
         "Defaults to searching every calendar on the account — pass `calendar` to scope it to just one. " +
-        "Recurring events are expanded into their individual occurrences within the range by the server.",
+        "For a single day (\"today\", \"tomorrow\", \"on Friday\") pass `date` instead of a range. " +
+        "All-day events are returned with plain local dates (YYYY-MM-DD) in start/end, end inclusive.",
       parameters: Type.Object({
+        date: Type.Optional(
+          Type.String({ description: "One whole day, YYYY-MM-DD in the user's local time. Overrides startISO/endISO." }),
+        ),
         startISO: Type.Optional(Type.String({ description: "Range start, ISO 8601. Defaults to now." })),
         endISO: Type.Optional(
           Type.String({ description: "Range end, ISO 8601. Defaults to 7 days after start." }),
@@ -208,16 +232,21 @@ export default defineToolPlugin({
         ),
       }),
       outputSchema: Type.Array(EventOut),
-      async execute({ startISO, endISO, calendar }, config) {
+      async execute({ date, startISO, endISO, calendar }, config) {
         const dav = await client(config);
-        const start = startISO ? new Date(startISO) : new Date();
-        const end = endISO ? new Date(endISO) : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+        let start = startISO ? new Date(startISO) : new Date();
+        let end = endISO ? new Date(endISO) : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+        if (date) {
+          const [y, m, d] = date.split("-").map(Number);
+          start = new Date(y, m - 1, d);
+          end = new Date(y, m - 1, d + 1);
+        }
 
         const targets = calendar ? [await pickCalendar(dav, config, calendar)] : await allCalendars(dav);
-        const events: EventOutT[] = [];
-        for (const cal of targets) {
-          events.push(...(await listEventsInCalendar(dav, cal, start, end)));
-        }
+        // All calendars at once: one round trip of waiting instead of one per calendar.
+        const events: EventOutT[] = (
+          await Promise.all(targets.map((cal) => listEventsInCalendar(dav, cal, start, end)))
+        ).flat();
         events.sort((a, b) => a.start.localeCompare(b.start));
         return events;
       },

@@ -6,6 +6,7 @@ set -euo pipefail
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
 # Models used for each option. Change these to try others.
+DEEPINFRA_MODEL="Qwen/Qwen3-235B-A22B-Instruct-2507"    # answers without a slow "thinking" step; reliable with gremlin tools
 OLLAMA_CLOUD_MODEL="deepseek-v4-flash"                  # open-weight model from Ollama's hosted catalog
 CLAUDE_MODEL="anthropic/claude-haiku-4-5"
 
@@ -15,12 +16,14 @@ Choose your gremlin's brain. Privacy is rated from ●○○○○ (least) to �
 
   1) Local, on this PC (Ollama)            ●●●●●  Nothing leaves your PC. Free.
                                                   Needs a strong PC; slower and makes more mistakes than the cloud options.
-  2) Ollama Cloud                          ●●●○○  Says it processes and discards prompts, no training. Mostly US servers.
+  2) DeepInfra                             ●●●○○  Zero data retention written into its Terms of Service; no training. US company.
+                                                  Pay per use: roughly $2-3/month for a typical gremlin. Needs a card.
+  3) Ollama Cloud                          ●●●○○  Says it processes and discards prompts, no training. Mostly US servers.
                                                   Free with usage limits, or $20/month.
-  3) Claude (Anthropic)                    ●●○○○  Most capable. Kept 30 days with training switched off (up to 5 years if on).
+  4) Claude (Anthropic)                    ●●○○○  Most capable. Kept 30 days with training switched off (up to 5 years if on).
                                                   Needs a Claude Pro subscription.
 EOF
-read -rp "Choose 1-3: " CHOICE
+read -rp "Choose 1-4: " CHOICE
 
 # One config change for every option: the provider entry (if any), the default model, and no fallbacks,
 # so a failure shows as an error instead of silently sending your data to a different, less private brain.
@@ -64,7 +67,7 @@ case "$CHOICE" in
     echo "   expect replies to take a minute or more, and more mistakes."
     read -rp "   Continue anyway? [y/N] " ok; [[ "$ok" =~ ^[Yy] ]] || exit 1
   else
-    echo "   This PC doesn't have enough memory for a local brain. Choose option 2 or 3 instead."; exit 1
+    echo "   This PC doesn't have enough memory for a local brain. Choose option 2, 3 or 4 instead."; exit 1
   fi
   echo "==> Installing Ollama (inside Ubuntu, reachable only from this PC)"
   command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh
@@ -84,11 +87,20 @@ case "$CHOICE" in
   apply "ollama/$MODEL" ollama "$(printf '{"baseUrl":"http://127.0.0.1:11434","apiKey":"ollama-local","api":"ollama","timeoutSeconds":300,"models":[{"id":"%s","name":"%s","input":["text"],"contextTokens":%s,"params":{"num_ctx":%s,"keep_alive":"30m"}}]}' "$MODEL" "$MODEL" "$CTX" "$CTX")"
   ;;
 2)
-  echo "Create an API key at ollama.com > Settings > Keys."
-  store_key OLLAMA_API_KEY "Ollama API key"
-  apply "ollama-cloud/$OLLAMA_CLOUD_MODEL" ollama-cloud "$(printf '{"apiKey":%s}' "$(ref OLLAMA_API_KEY)")"
+  echo "Create an API key at deepinfra.com > Dashboard > API keys, and add a card under Billing."
+  openclaw plugins list --json 2>/dev/null | grep -q '"id": *"deepinfra"' || openclaw plugins install @openclaw/deepinfra-provider
+  store_key DEEPINFRA_API_KEY "DeepInfra API key"
+  # The model is listed explicitly: OpenClaw's command line can't fetch DeepInfra's catalogue with a key held in the
+  # secret store, so validation would reject an unlisted model. A provider entry with models also needs the plugin's
+  # own baseUrl and api, or OpenClaw treats it as a custom route with no endpoint.
+  apply "deepinfra/$DEEPINFRA_MODEL" deepinfra "$(printf '{"baseUrl":"https://api.deepinfra.com/v1/openai","api":"openai-completions","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":32000}]}' "$(ref DEEPINFRA_API_KEY)" "$DEEPINFRA_MODEL" "$DEEPINFRA_MODEL")"
   ;;
 3)
+  echo "Create an API key at ollama.com > Settings > Keys."
+  store_key OLLAMA_API_KEY "Ollama API key"
+  apply "ollama-cloud/$OLLAMA_CLOUD_MODEL" ollama-cloud "$(printf '{"baseUrl":"https://ollama.com","api":"ollama","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":32000}]}' "$(ref OLLAMA_API_KEY)" "$OLLAMA_CLOUD_MODEL" "$OLLAMA_CLOUD_MODEL")"   # listed explicitly; see DeepInfra note
+  ;;
+4)
   command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code
   claude auth status >/dev/null 2>&1 || { echo "Run 'claude auth login' (a browser login), then run this again."; exit 1; }
   b=$(mktemp)
@@ -98,7 +110,7 @@ case "$CHOICE" in
   echo
   echo "Remember: claude.ai > Settings > Data privacy controls > turn model training OFF."
   ;;
-*) echo "Please run again and choose 1-3."; exit 1 ;;
+*) echo "Please run again and choose 1-4."; exit 1 ;;
 esac
 
 echo "==> Restarting your gremlin with its new brain"

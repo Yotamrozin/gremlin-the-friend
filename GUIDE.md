@@ -2,13 +2,13 @@
 
 This guide is the reference for the kit, written for whoever runs the setup, a person or Claude Code. Each step names its script, says how to check that it worked, and lists the known problems at that stage. The final section, "Known problems", collects every failure seen so far.
 
-Verified on: Windows 11 25H2, WSL 2.7, Ubuntu, Node 24.21, OpenClaw 2026.9.6, Claude Code 2.1.283, signal-cli 0.14.8, Radicale 3.8. **Config field names change between OpenClaw versions.** If a command in this guide is rejected, `openclaw doctor` and `openclaw config schema` on the installed version are more authoritative than this file.
+Verified on: Windows 11 25H2, WSL 2.7, Ubuntu, Node 24.21, OpenClaw 2026.9.6 and 2026.10.2, Claude Code 2.1.283, signal-cli 0.14.8, Radicale 3.8. **Config field names change between OpenClaw versions.** If a command in this guide is rejected, `openclaw doctor` and `openclaw config schema` on the installed version are more authoritative than this file.
 
 ## How it fits together
 
 ```
 Your phone (Signal) ──► bot's Signal account ──► signal-cli (in WSL) ──► OpenClaw gateway (127.0.0.1 only)
-                                                                         ├─ the brain: your choice (local Ollama, Ollama Cloud, Claude)
+                                                                         ├─ the brain: your choice (local Ollama, DeepInfra, Ollama Cloud, Claude)
                                                                          ├─ calendar plugin ──► your choice: Radicale (default), iCloud, Fastmail, any CalDAV
                                                                          └─ tasks plugin ──► Radicale (in WSL, HTTPS over Tailscale)
 Your phone: Tasks.org ──► Radicale over Tailscale.   DAVx5 + Calendula ──► wherever the calendar lives.
@@ -96,14 +96,16 @@ The brain is the AI model that reads your messages and decides what to do. Run `
 | Option | Privacy | What happens to your conversations | Cost | Quality and speed |
 |---|---|---|---|---|
 | **1. Local** (Ollama on this PC) | ●●●●● | Never leave the PC. | Free | Depends on the PC. With an NVIDIA card with 8 GB or more, usable for everyday requests. Without one, slow (a minute or more per reply) and more mistakes. |
-| **2. Ollama Cloud** | ●●●○○ | Ollama says prompts are processed and discarded, never stored or trained on. Mostly US servers. | Free with 5-hourly and weekly limits, or $20/month | Good. Default model `deepseek-v4-flash` (open weights). |
-| **3. Claude** (Anthropic) | ●●○○○ | Kept 30 days with model training switched off; up to 5 years and used for training if on (the default for new accounts). | Claude Pro subscription | Best. Default model `claude-haiku-4-5` via Claude Code. |
+| **2. DeepInfra** | ●●●○○ | Zero data retention written into DeepInfra's binding Terms of Service: inputs held in memory only, request content not logged, no training. US company. | Pay per use. Measured on a real gremlin: about $0.09 per million input tokens; roughly $3–6 a month with the settings in step H. | Good. Default model `Qwen/Qwen3-235B-A22B-Instruct-2507` (answers without a slow thinking step). 15–25 s for a calendar question, about 35 s for a week's overview. |
+| **3. Ollama Cloud** | ●●●○○ | Ollama says prompts are processed and discarded, never stored or trained on. Mostly US servers. | Free with 5-hourly and weekly limits, or $20/month | Good. Default model `deepseek-v4-flash` (open weights). |
+| **4. Claude** (Anthropic) | ●●○○○ | Kept 30 days with model training switched off; up to 5 years and used for training if on (the default for new accounts). | Claude Pro subscription | Best. Default model `claude-haiku-4-5` via Claude Code. |
 
 How it works:
 - **Cloud API keys are typed into a hidden prompt** and kept in OpenClaw's secret store (`openclaw secrets store`), referenced from the config, never written into `openclaw.json`.
 - **Fallbacks are cleared.** If the chosen brain fails, the gremlin shows an error instead of quietly sending your data to another, less private brain.
 - **Local:** the script checks the RAM and NVIDIA video memory and picks a model: `gpt-oss:20b` with 12 GB+ VRAM, `qwen3:8b` with 8 GB, `qwen3:4b` on the processor only (with a warning). Ollama runs inside Ubuntu, bound to `127.0.0.1`, with models kept loaded for 30 minutes. On NVIDIA machines it adds `autoMemoryReclaim=disabled` to `.wslconfig`, because GPU models in WSL2 can otherwise make Windows restart WSL in a loop (from OpenClaw's Ollama troubleshooting docs). This takes effect after the next Windows restart.
-- **How big each call is:** measured on a real gremlin, about 15,000–20,000 tokens per model call (its instructions, tool list, workspace files and conversation). A typical request takes 2–4 calls. Keep the workspace lean: every `.md` file loaded there is resent on every call. With paid-per-token brains this drives the cost, and with free tiers it drives how fast you hit limits.
+- **How big each call is:** measured on a real gremlin, about 13,000–18,000 tokens per model call in a fresh conversation (its instructions, tool list, workspace files and conversation), and 2–4 calls per request. Two settings matter a lot, and step H applies both: a heartbeat every 30 minutes *inside the chat* grew calls to about 76,000 tokens each, and 50+ tools hidden behind a search step added an extra call per request. Cloud brains also get a 32,000-token context cap, so older conversation is summarised rather than resent. Sending `/new` now and then keeps things fast.
+- **DeepInfra:** uses OpenClaw's official `@openclaw/deepinfra-provider` plugin (needs OpenClaw 2026.10.2 or later). The model is listed explicitly with DeepInfra's own `baseUrl` and `api`, because OpenClaw's command line can't fetch DeepInfra's catalogue when the key is in the secret store. DeepInfra's busy errors (429) are correctly treated as temporary and retried. Its "priority" tier made no measurable difference in testing. Models tried: Qwen3 235B Instruct was fastest and accurate once the calendar plugin reported all-day events as local dates; gpt-oss-120b was accurate but about twice as slow; DeepSeek V4 Flash was slow and often busy; Mistral Small 3.2 invented an event. Keep the workspace lean: every `.md` file loaded there is resent on every call. With paid-per-token brains this drives the cost, and with free tiers it drives how fast you hit limits.
 - **Tried and dropped: Scaleway (EU).** Its privacy terms looked good, but:
   - new accounts are rate-limited after about 4 quick calls until you pass a third-party ID check;
   - OpenClaw misreads its `429 "INSUFFICIENT QUOTA"` as a billing error and locks the key for 10 minutes;
