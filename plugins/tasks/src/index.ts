@@ -85,6 +85,8 @@ const TaskOut = Type.Object(
     uid: Type.String(),
     summary: Type.String(),
     status: Type.String(),
+    // Local date the task was marked done. Without it a model can't tell "done today" from "done last week".
+    completedOn: Type.Optional(Type.String()),
     due: Type.Optional(Type.String()),
     description: Type.Optional(Type.String()),
     list: Type.String(),
@@ -105,6 +107,11 @@ const VTODO_FILTER = [
   },
 ];
 
+function localDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 async function listTasksInList(dav: DAVClient, list: DAVCalendar): Promise<TaskOutT[]> {
   const objects = await dav.fetchCalendarObjects({ calendar: list, filters: VTODO_FILTER as any });
   const tasks: TaskOutT[] = [];
@@ -118,6 +125,7 @@ async function listTasksInList(dav: DAVClient, list: DAVCalendar): Promise<TaskO
         uid: String(t.uid ?? key),
         summary: t.summary ?? "(no title)",
         status: t.status ?? "NEEDS-ACTION",
+        completedOn: t.completed ? localDate(new Date(t.completed)) : undefined,
         due: t.due ? new Date(t.due).toISOString() : undefined,
         description: t.description || undefined,
         list: String(list.displayName),
@@ -174,20 +182,26 @@ export default defineToolPlugin({
       label: "List Tasks",
       description:
         "List tasks. Defaults to every list and every status. Pass `list` to scope to one list, or " +
-        "`status` to filter (open/completed).",
+        "`status` to filter (open/completed). Completed tasks carry `completedOn` (local date). To know what " +
+        "was done on a given day, pass `completedOn` (YYYY-MM-DD) — never infer it from notes or the calendar.",
       parameters: Type.Object({
         list: Type.Optional(Type.String()),
         status: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("completed")])),
+        completedOn: Type.Optional(
+          Type.String({ description: "Only tasks completed on this local date, YYYY-MM-DD (e.g. today)." }),
+        ),
       }),
       outputSchema: Type.Array(TaskOut),
-      async execute({ list, status }, config) {
+      async execute({ list, status, completedOn }, config) {
         const dav = await client(config);
         const targets = list ? [await pickList(dav, config, list)] : await allLists(dav);
         const tasks: TaskOutT[] = [];
         for (const l of targets) tasks.push(...(await listTasksInList(dav, l)));
-        const filtered = status
-          ? tasks.filter((t) => (status === "completed" ? t.status === "COMPLETED" : t.status !== "COMPLETED"))
-          : tasks;
+        const filtered = (
+          status
+            ? tasks.filter((t) => (status === "completed" ? t.status === "COMPLETED" : t.status !== "COMPLETED"))
+            : tasks
+        ).filter((t) => !completedOn || t.completedOn === completedOn);
         filtered.sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));
         return filtered;
       },
