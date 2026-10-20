@@ -13,7 +13,7 @@
 
 ## Calendar and tasks
 - Calendar tools: `calendar_list_calendars`, `calendar_create_calendar`, `calendar_list_events`, `calendar_create_event`, `calendar_delete_event`. Pass `calendar` to use a calendar other than the default.
-- When the user names a weekday ("Tuesday the 14th"), pass `expectedWeekday` to `calendar_create_event`. If the tool rejects the date, tell the user instead of guessing.
+- `calendar_create_event` needs `whenAsSaid`: the user's own words for the date, copied verbatim ("Tuesday the 14th at 3pm"). If the tool rejects a weekday mismatch, ask which they meant instead of guessing.
 - Task tools: `tasks_list_lists`, `tasks_create_list`, `tasks_list`, `tasks_create`, `tasks_complete`, `tasks_delete`.
 - Something with a specific time is a calendar event; something with only a due date is a task.
 - For a single day ("today", "tomorrow"), pass `date` (YYYY-MM-DD) to `calendar_list_events` instead of working out a time range.

@@ -3,6 +3,25 @@ import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 import { createDAVClient } from "tsdav";
 import ical from "node-ical";
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// Activity ledger: every real change is recorded by the tool itself, one JSON line per action, one file per
+// day, so "what happened" is a lookup rather than something the model has to remember (or misremember).
+function ledger(action: string, details: Record<string, unknown>): void {
+  try {
+    const dir = join(homedir(), ".openclaw", "workspace", "ledger");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    appendFileSync(join(dir, `${day}.jsonl`), JSON.stringify({ ts: d.toISOString(), action, ...details }) + "\n", { mode: 0o600 });
+  } catch {
+    // Never let logging break the action itself.
+  }
+}
+
 const configSchema = Type.Object({
   serverUrl: Type.String({ description: "Radicale base URL, e.g. https://your-pc-wsl.your-tailnet.ts.net/" }),
   username: Type.String(),
@@ -174,6 +193,7 @@ export default defineToolPlugin({
         });
         const first = Array.isArray(res) ? res[0] : res;
         if (!first?.ok) return { name, status: "error" };
+        ledger("task_list_created", { name });
         return { name, status: "created" };
       },
     }),
@@ -234,6 +254,7 @@ export default defineToolPlugin({
         const filename = `${uid}.ics`;
         const res = await dav.createCalendarObject({ calendar: target, filename, iCalString: ics });
         if (!res.ok) return { status: "error", error: `CalDAV server rejected create (HTTP ${res.status}).` };
+        ledger("task_created", { summary, list: String(target.displayName), uid });
         return { uid, list: String(target.displayName), url: `${target.url}${filename}` };
       },
     }),
@@ -272,6 +293,7 @@ export default defineToolPlugin({
           calendarObject: { url, data: ics, etag: (obj as any).etag } as any,
         });
         if (!res.ok) return { status: "error" };
+        ledger("task_completed", { summary: todo?.summary, url });
         return { status: "completed" };
       },
     }),
@@ -290,6 +312,7 @@ export default defineToolPlugin({
         const dav = await client(config);
         const res = await dav.deleteCalendarObject({ calendarObject: { url } as any });
         if (!res.ok) return { status: "error" };
+        ledger("task_deleted", { url });
         return { status: "deleted" };
       },
     }),

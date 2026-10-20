@@ -13,9 +13,12 @@ for p in calendar tasks; do
   echo "==> Building $p"
   rm -rf ~/.openclaw/plugins/$p
   cp -r "$KIT/plugins/$p" ~/.openclaw/plugins/$p
-  (cd ~/.openclaw/plugins/$p && npm install --no-fund --no-audit && npm run plugin:build)
+  # Package with the installed OpenClaw, not the copy npm puts in node_modules: an older bundled copy
+  # refuses to open a newer OpenClaw database.
+  (cd ~/.openclaw/plugins/$p && npm install --no-fund --no-audit && npx tsc -p tsconfig.json && openclaw plugins build --entry ./dist/index.js)
   (cd ~/.openclaw && openclaw plugins install ./plugins/$p --force)
   openclaw plugins enable $p
+  rm -rf ~/.openclaw/plugins/$p/node_modules   # ~800 MB of build files; would bloat every backup. `npm install` brings them back.
 done
 
 cat <<'EOF'

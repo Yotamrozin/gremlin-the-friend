@@ -93,7 +93,10 @@ case "$CHOICE" in
   # The model is listed explicitly: OpenClaw's command line can't fetch DeepInfra's catalogue with a key held in the
   # secret store, so validation would reject an unlisted model. A provider entry with models also needs the plugin's
   # own baseUrl and api, or OpenClaw treats it as a custom route with no endpoint.
-  apply "deepinfra/$DEEPINFRA_MODEL" deepinfra "$(printf '{"baseUrl":"https://api.deepinfra.com/v1/openai","api":"openai-completions","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":32000}]}' "$(ref DEEPINFRA_API_KEY)" "$DEEPINFRA_MODEL" "$DEEPINFRA_MODEL")"
+  # Voice notes: Signal voice messages are transcribed with DeepInfra's Whisper, so you can answer by talking.
+  echo '[{"path":"tools.media","value":{"models":[{"provider":"deepinfra","model":"openai/whisper-large-v3-turbo","capabilities":["audio"]}],"audio":{"enabled":true}}}]' > /tmp/gremlin-audio.json
+  openclaw config set --batch-file /tmp/gremlin-audio.json >/dev/null && rm -f /tmp/gremlin-audio.json
+  apply "deepinfra/$DEEPINFRA_MODEL" deepinfra "$(printf '{"baseUrl":"https://api.deepinfra.com/v1/openai","api":"openai-completions","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":64000}]}' "$(ref DEEPINFRA_API_KEY)" "$DEEPINFRA_MODEL" "$DEEPINFRA_MODEL")"
   ;;
 3)
   echo "Create an API key at ollama.com > Settings > Keys."

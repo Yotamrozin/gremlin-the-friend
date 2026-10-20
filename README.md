@@ -70,10 +70,11 @@ Claude Code is only the installer. It sees the setup commands and their output, 
 | [`linux/`](linux/) | Six numbered install scripts plus `brain.sh` (choose or switch the brain), run inside Ubuntu (WSL) |
 | [`plugins/`](plugins/) | The calendar (any CalDAV server) and tasks plugins for OpenClaw |
 | [`workspace/`](workspace/) | The gremlin's rulebook (`RULES.md`) and additions to `AGENTS.md` |
+| [`checks/`](checks/) | Plain-code safety net: a daily outside check that alerts you on Signal, and regression tests to run after changes |
 
 ## Status
 
-This kit was built from one real install and tested on that machine. The scripts haven't yet been run end to end on a fresh PC, so expect rough edges. Brains tested on a real gremlin: **DeepInfra** and **Claude**. **Local** and **Ollama Cloud** are set up by `brain.sh` but haven't been tested in daily use yet. If something breaks, [GUIDE.md's "Known problems"](GUIDE.md#known-problems) is the first stop, and issues and pull requests are welcome.
+This kit was built from one real install and tested on that machine. The scripts haven't yet been run end to end on a fresh PC, so expect rough edges. Brains tested on a real gremlin: **DeepInfra** and **Claude**. **Local** and **Ollama Cloud** are set up by `brain.sh` but haven't been tested in daily use yet. The regression tests in [`checks/`](checks/) pass on the original install; they already caught two real bugs (missed recurring events, a skippable weekday check), both fixed. If something breaks, [GUIDE.md's "Known problems"](GUIDE.md#known-problems) is the first stop, and issues and pull requests are welcome.
 
 ## License
 

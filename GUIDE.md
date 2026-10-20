@@ -210,15 +210,19 @@ To check it: `openclaw plugins list` shows both plugins enabled. In Signal, send
 ## H. Hardening and backups — `linux/06-harden.sh [backup-folder]`
 
 The script does the following:
-- Disables every plugin except `anthropic` and `ollama` (brain providers), `signal`, `memory-core`, `calendar` and `tasks`. A default install enables about 30.
+- Disables every plugin except the brain providers (`anthropic`, `ollama`, `deepinfra`), `signal`, `memory-core`, `calendar` and `tasks`. A default install enables about 30.
+- Gives the gremlin only the tools it uses, with no tool search, and a heartbeat every 4 hours in its own session.
 - Installs `RULES.md` and adds the kit's rules to `AGENTS.md`.
-- Makes the workspace private and adds a systemd drop-in with `UMask=0077` and `DISABLE_ERROR_REPORTING=1`.
-- Sets up a daily 04:00 backup timer (`Persistent=true`, so a backup missed while the PC was off runs at next boot).
+- Switches off OpenClaw's overnight "dreaming": it writes free-form diary entries and can promote them into `MEMORY.md`.
+- Makes the workspace private, adds a systemd drop-in with `UMask=0077` and `DISABLE_ERROR_REPORTING=1`, and puts the workspace under git.
+- Sets up the nightly backup (04:00, `Persistent=true`) and the daily outside check (09:30); see section I.
 - Restarts the gateway.
 
-**Choosing the backup folder:**
-- A Dropbox or OneDrive folder gives you an off-PC copy, for example `"/mnt/c/Users/<you>/Dropbox/openclaw-backups"`.
-- Backups are written as `.partial` and then renamed, so sync never uploads half a file.
+**Backups:**
+- Pass a Dropbox or OneDrive folder to get an off-PC copy, for example `"/mnt/c/Users/<you>/Dropbox/openclaw-backups"`.
+- Each night the script commits the workspace to git, takes **OpenClaw's own verified snapshot** (`openclaw backup create --verify`), and archives the tasks server's data. A plain `tar` of `~/.openclaw` fails with "file changed as we read it", because the databases are live.
+- **If any step fails, you get a Signal message** with the date of the last good backup. A backup that fails silently is no backup.
+- Snapshots are about 80–100 MB, mostly the control panel's display files, which the snapshot command always includes. The newest 7 are kept.
 - If you edit the backup script from Windows (`\\wsl$`), it can lose its execute bit. Fix with `chmod 700`.
 
 **Privacy checklist (only the human can do these):**
@@ -232,7 +236,31 @@ The script does the following:
 
 **Heartbeat:** `openclaw doctor` may migrate `HEARTBEAT.md` into the heartbeat automation's scratch. To change the checklist, use `openclaw automations list`, then `openclaw automations scratch <id> --file checklist.md`. If the heartbeat reports "HEARTBEAT.md missing", that's why. The kit's `AGENTS.md` already points at `RULES.md` instead.
 
-**Limits of the rulebook:** it catches drift (a forgotten plugin, a reverted config), not a compromised agent. Check the logs yourself now and then.
+**Limits of the rulebook:** it catches drift (a forgotten plugin, a reverted config), not a compromised agent. That's what section I is for.
+
+## I. Checks that don't rely on the AI
+
+A model can't reliably audit itself: in testing, one changed a file it had just been told not to touch. So three things run as plain code:
+
+- **Activity ledger.** The calendar and tasks plugins append one JSON line per real change (event created, task completed, item deleted) to `~/.openclaw/workspace/ledger/<date>.jsonl`. The record of what happened is written by the tools, not remembered by the model.
+- **Daily outside check** (`checks/daily-check.py`, 09:30 via `openclaw-check.timer`). It messages you on Signal **only when something is wrong**:
+  - the newest backup is older than 30 hours;
+  - the gateway is unhealthy or not bound to 127.0.0.1, or Signal isn't answering;
+  - model fallbacks have appeared (data could silently go to another brain);
+  - `AGENTS.md` is over budget, or new rule files have appeared at the workspace root;
+  - a note `MEMORY.md` lists is missing;
+  - an automation message is phrased as a question (see "Known problems");
+  - the system logs are ballooning.
+
+  Run `python3 ~/.openclaw/checks/daily-check.py --print` to see the report without sending it.
+- **Regression tests** (`checks/regression.py`). **Run them after any change to the brain, model, plugins or rules.** Five standard requests go through the real agent in fresh sessions, and the answers are checked against the real calendar and task server:
+  1. tomorrow's events, all-day ones included;
+  2. tasks completed today;
+  3. creating a task;
+  4. the weekday guard: a mismatched weekday must not create an event;
+  5. a reminder phrased as an instruction.
+
+  Anything they create is removed again. They take a few minutes and cost a few cents. Run them with `python3 ~/.openclaw/checks/regression.py`.
 
 ## Reminders
 
@@ -258,6 +286,14 @@ The bot schedules reminders with `openclaw automations add ... --at 20m --announ
 | Event on the wrong weekday | Model date arithmetic | Ask with the weekday; the tool checks `expectedWeekday` |
 | Bot tries `sleep` for reminders | Doesn't know about automations | `AGENTS.md` reminders section; `/new` |
 | Heartbeat: HEARTBEAT.md missing | Migrated into the automation scratch | See section H, Heartbeat |
+| A daily summary lists things done on other days, or invents activities | The automation's message was a question ("What got done today?"), so the run answered it itself; and nothing told it *when* tasks were done | Write automation messages as instructions ("Send the user…"); "done today" comes from `tasks_list` with `completedOn` = today. The daily check flags question-style messages. |
+| The bot claims it fixed something it didn't | Models report intentions as results | `AGENTS.md`: only claim what a tool result confirms; check the ledger or the file itself |
+| "What's on tomorrow?" misses repeating events | A recurring series only carries its first date (often years ago) | The calendar plugin asks the server to expand series into their occurrences (`expand: true`). Found by the regression tests. |
+| An event gets booked on the wrong day despite a weekday mismatch | The weekday check only ran if the model chose to pass a weekday | `calendar_create_event` requires `whenAsSaid`, the user's words copied verbatim, and checks any weekday in it itself. Found by the regression tests. |
+| Backup fails with "file changed as we read it" | Plain `tar` on live databases | The kit uses `openclaw backup create --verify` (section H) |
+| Backups are suddenly huge (hundreds of MB) | Plugin build files left in `~/.openclaw/plugins/*/node_modules` | `05-plugins.sh` deletes them after installing; `npm install` brings them back when needed |
+| Plugin build fails: "database uses newer schema version" | The build used the older OpenClaw copy inside the plugin's `node_modules` | Build with the installed CLI: `npx tsc -p tsconfig.json && openclaw plugins build --entry ./dist/index.js` |
+| "Context overflow: prompt too large" in an automation | Context cap too small for a job that reads several files and tools | DeepInfra's default cap is 64,000 tokens; raise `contextTokens` on the model if needed |
 | Window flashes every few minutes | A task registered without `-Hidden` | Re-run `setup-autostart.ps1` |
 | `Start OpenClaw` says down, but the bot replies | That probe is sometimes wrong | Trust the bot |
 | Message lost right after a restart | Restart window | Resend; avoid restarts mid-conversation |

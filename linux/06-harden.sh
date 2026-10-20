@@ -41,22 +41,43 @@ Environment=DISABLE_ERROR_REPORTING=1
 EOF
 grep -q DISABLE_ERROR_REPORTING ~/.bashrc || echo 'export DISABLE_ERROR_REPORTING=1' >> ~/.bashrc
 
-echo "==> Daily backup"
+echo "==> No overnight 'dreaming' (it writes free-form diary entries and can promote them into MEMORY.md)"
+echo '[{"path":"plugins.entries.memory-core.config.dreaming","value":{"enabled":false}}]' > /tmp/gremlin-dream.json
+openclaw config set --batch-file /tmp/gremlin-dream.json && rm -f /tmp/gremlin-dream.json
+
+echo "==> Workspace history (every change to rules and notes becomes a reversible git commit)"
+git -C "$W" init -q 2>/dev/null || true
+git -C "$W" config user.name "Gremlin workspace"; git -C "$W" config user.email "gremlin@localhost"
+git -C "$W" add -A && git -C "$W" commit -qm "Initial workspace" || true
+
+echo "==> Daily backup, with a Signal alert if it ever fails"
 DEST="${1:-$HOME/openclaw-backups}"
+OWNER=$(openclaw config get channels.signal.allowFrom 2>/dev/null | python3 -c 'import json,sys; print((json.load(sys.stdin) or [""])[0])' 2>/dev/null || true)
 cat > ~/.openclaw/openclaw-backup.sh <<EOF
 #!/usr/bin/env bash
-# Daily snapshot of the bot's state and your tasks. Written as .partial then renamed,
-# so a syncing folder never uploads a half-written file. Keeps 14 days.
-set -euo pipefail
+# Nightly backup: OpenClaw's own verified snapshot (a plain tar fails on its live databases) plus the
+# tasks server's data. Any failure is sent to Signal: a backup that fails silently is no backup.
+set -uo pipefail
+export PATH="\$HOME/.npm-global/bin:\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 DEST="$DEST"
-mkdir -p "\$DEST"
-TMP="\$DEST/.openclaw-backup-\$(date +%F).tar.gz.partial"
-FINAL="\$DEST/openclaw-backup-\$(date +%F).tar.gz"
-cd "\$HOME/.openclaw"
-ITEMS=(); for i in state agents workspace media backups openclaw.json; do [ -e "\$i" ] && ITEMS+=("\$i"); done
-tar -czf "\$TMP" "\${ITEMS[@]}" -C "\$HOME" radicale-data
-mv "\$TMP" "\$FINAL"
-ls -1t "\$DEST"/openclaw-backup-*.tar.gz | tail -n +15 | xargs -r rm -f
+TO="$OWNER"
+KEEP=7   # each snapshot is roughly 80-100 MB
+LOG=\$(mktemp)
+fail() {
+  local last; last=\$(ls -1t "\$DEST"/*openclaw-backup*.tar.gz 2>/dev/null | head -1 | xargs -r -d '\n' basename)
+  [ -n "\$TO" ] && openclaw message send --channel signal --target "\$TO" --message "⚠️ Nightly backup failed: \$1. Last good backup: \${last:-none found}." >/dev/null 2>&1
+  echo "FAILED: \$1" >&2; cat "\$LOG" >&2; exit 1
+}
+mkdir -p "\$DEST" || fail "the backup folder isn't reachable"
+git -C "\$HOME/.openclaw/workspace" add -A >/dev/null 2>&1 && git -C "\$HOME/.openclaw/workspace" commit -qm "Nightly snapshot \$(date +%F)" >/dev/null 2>&1 || true
+openclaw backup create --output "\$DEST" --verify >"\$LOG" 2>&1 || fail "OpenClaw snapshot (\$(tail -1 "\$LOG"))"
+TMP="\$DEST/.radicale-\$(date +%F).tar.gz.partial"
+tar -czf "\$TMP" -C "\$HOME" radicale-data 2>>"\$LOG"; rc=\$?
+[ "\$rc" -le 1 ] || fail "tasks data (tar exit \$rc)"   # exit 1 only means "a file changed"; Radicale writes atomically
+mv "\$TMP" "\$DEST/radicale-\$(date +%F).tar.gz"
+ls -1t "\$DEST"/*openclaw-backup*.tar.gz | tail -n +\$((KEEP + 1)) | xargs -r -d '\n' rm -f
+ls -1t "\$DEST"/radicale-*.tar.gz | tail -n +\$((KEEP + 1)) | xargs -r -d '\n' rm -f
+rm -f "\$LOG"
 EOF
 chmod 700 ~/.openclaw/openclaw-backup.sh
 cat > ~/.config/systemd/user/openclaw-backup.service <<'EOF'
@@ -82,6 +103,31 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable --now openclaw-backup.timer
 systemctl --user start openclaw-backup.service && echo "Test backup written to $DEST"
+
+echo "==> Daily outside check (plain code, no AI): messages you only if something is wrong"
+mkdir -p ~/.openclaw/checks && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
+cat > ~/.config/systemd/user/openclaw-check.service <<'EOF'
+[Unit]
+Description=Gremlin daily outside check (no AI)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.openclaw/checks/daily-check.py
+EOF
+cat > ~/.config/systemd/user/openclaw-check.timer <<'EOF'
+[Unit]
+Description=Gremlin daily outside check
+
+[Timer]
+OnCalendar=*-*-* 09:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now openclaw-check.timer
+python3 ~/.openclaw/checks/daily-check.py --print || true
 
 echo "==> Restart the bot so the new settings apply"
 systemctl --user restart openclaw-gateway

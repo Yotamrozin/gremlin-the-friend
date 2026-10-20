@@ -4,6 +4,25 @@ import { createDAVClient } from "tsdav";
 import ical from "node-ical";
 import ICalGen from "ical-generator";
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// Activity ledger: every real change is recorded by the tool itself, one JSON line per action, one file per
+// day, so "what happened" is a lookup rather than something the model has to remember (or misremember).
+function ledger(action: string, details: Record<string, unknown>): void {
+  try {
+    const dir = join(homedir(), ".openclaw", "workspace", "ledger");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    appendFileSync(join(dir, `${day}.jsonl`), JSON.stringify({ ts: d.toISOString(), action, ...details }) + "\n", { mode: 0o600 });
+  } catch {
+    // Never let logging break the action itself.
+  }
+}
+
 const configSchema = Type.Object({
   serverUrl: Type.String({
     description:
@@ -119,14 +138,25 @@ async function listEventsInCalendar(
   const objects = await dav.fetchCalendarObjects({
     calendar: cal,
     timeRange: { start: new Date(start.getTime() - DAY).toISOString(), end: new Date(end.getTime() + DAY).toISOString() },
+    // Server-side expansion: a repeating series comes back as its individual occurrences in this window,
+    // with skipped dates and moved occurrences applied. Without it, a series only carries its first date
+    // (often years ago), and "what's on tomorrow?" silently dropped every recurring event.
+    expand: true,
   });
   const events: EventOutT[] = [];
   for (const obj of objects) {
     if (!obj.data) continue;
-    const parsed = ical.sync.parseICS(obj.data) as Record<string, any>;
-    for (const key of Object.keys(parsed)) {
-      const ev = parsed[key];
-      if (!ev || ev.type !== "VEVENT") continue;
+    // Expanded occurrences share one UID, so parse each VEVENT block on its own rather than letting the
+    // parser merge them into one series.
+    const blocks = obj.data.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) ?? [];
+    for (const block of blocks) {
+      const parsed = ical.sync.parseICS(`BEGIN:VCALENDAR
+VERSION:2.0
+${block}
+END:VCALENDAR`) as Record<string, any>;
+      const key = Object.keys(parsed).find((k) => parsed[k]?.type === "VEVENT");
+      const ev = key ? parsed[key] : undefined;
+      if (!ev) continue;
       const allDay = Boolean(ev.start?.dateOnly);
       const evEnd: Date = ev.end ?? ev.start;
       // Keep only events overlapping the requested range. Recurring masters are kept as before (their own
@@ -208,6 +238,7 @@ export default defineToolPlugin({
         });
         const first = Array.isArray(res) ? res[0] : res;
         if (!first?.ok) return { name, status: "error" };
+        ledger("calendar_created", { name });
         return { name, status: "created" };
       },
     }),
@@ -264,6 +295,16 @@ export default defineToolPlugin({
         "on that weekday, so recompute and retry rather than guessing twice.",
       parameters: Type.Object({
         summary: Type.String({ description: "Event title." }),
+        whenAsSaid: Type.String({
+          description:
+            "The user's own words for when the event is, copied verbatim from their message " +
+            "(e.g. \"Tuesday the 14th at 3pm\", \"tomorrow at 10\", \"next Friday\"). Required. If it names a weekday, " +
+            "the tool checks it against startISO and rejects a mismatch.",
+        }),
+        weekdayInUserWords: Type.Union(
+          ["none", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((d) => Type.Literal(d)),
+          { description: "Did the user's message name a weekday for this event? Which one, or \"none\". Required; the tool rejects a date that falls on a different weekday." },
+        ),
         startISO: Type.String({ description: "Start time, ISO 8601." }),
         endISO: Type.Optional(
           Type.String({ description: "End time, ISO 8601. Defaults to 1 hour after start." }),
@@ -300,9 +341,26 @@ export default defineToolPlugin({
         { additionalProperties: false },
       ),
       async execute(
-        { summary, startISO, endISO, allDay, location, description, calendar, expectedWeekday, recurrence },
+        { summary, whenAsSaid, weekdayInUserWords, startISO, endISO, allDay, location, description, calendar, expectedWeekday, recurrence },
         config,
       ) {
+        // Weekday named in the user's own words: checked here, so the guard can't be skipped by the model.
+        // Two independent signals: the weekday the model says the user named (required, so it can't be skipped)
+        // and any weekday found in the user's words as copied.
+        const fromWords = (whenAsSaid ?? "").toLowerCase().match(/(mon|tue|wed|thu|fri|sat|sun)[a-z]*/);
+        const said = String(weekdayInUserWords ?? "none");
+        const named = said !== "none" ? [said, said.slice(0, 3)] : fromWords;
+        if (named) {
+          const actual = weekdayOfISODate(startISO);
+          if (!actual.toLowerCase().startsWith(named[1])) {
+            return {
+              status: "error",
+              error:
+                `The user said "${whenAsSaid}", but ${startISO.slice(0, 10)} is a ${actual}. Don't create the event: ` +
+                `tell the user the date and weekday don't match and ask which one they meant.`,
+            };
+          }
+        }
         if (expectedWeekday) {
           const actual = weekdayOfISODate(startISO);
           if (actual.toLowerCase() !== expectedWeekday.toLowerCase()) {
@@ -349,6 +407,7 @@ export default defineToolPlugin({
         if (!res.ok) {
           return { status: "error", error: `CalDAV server rejected create (HTTP ${res.status}).` };
         }
+        ledger("event_created", { summary, start: startISO, calendar: String(cal.displayName), recurring: Boolean(recurrence) });
         return { uid, calendar: String(cal.displayName), url: `${cal.url}${filename}` };
       },
     }),
@@ -376,6 +435,7 @@ export default defineToolPlugin({
         if (!res.ok) {
           return { status: "error" };
         }
+        ledger("event_deleted", { url: eventUrl });
         return { status: "deleted" };
       },
     }),
