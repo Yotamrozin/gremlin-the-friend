@@ -6,7 +6,7 @@ the owner on Signal only when something is wrong. Run by openclaw-check.timer ev
 Usage: daily-check.py [--print]   (--print shows the report instead of sending it)
 """
 import glob, json, os, re, subprocess, sys, time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~")
 WS = f"{HOME}/.openclaw/workspace"
@@ -110,6 +110,54 @@ for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
         head = open(p, encoding="utf-8", errors="ignore").read(800)
         if "source: user" not in head:
             problems.append(f"Event note '{os.path.basename(p)}' changed without 'source: user'.")
+
+# 9. Only approved plugins enabled (the heartbeat's own audit missed one; this doesn't rely on the model)
+approved_file = f"{HOME}/.openclaw/checks/approved-plugins.txt"
+if os.path.exists(approved_file):
+    approved = {l.strip() for l in open(approved_file) if l.strip() and not l.startswith("#")}
+    plugins = (oc_json("plugins", "list") or {}).get("plugins", [])
+    extra = sorted(p["id"] for p in plugins if p.get("enabled") and p["id"] not in approved)
+    if extra:
+        problems.append("Unapproved plugins are enabled: " + ", ".join(extra))
+
+# 10. Vault event notes keep the user's own words
+for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
+    if os.path.getmtime(p) >= since.timestamp() and "## In your words" not in open(p, encoding="utf-8", errors="ignore").read():
+        problems.append(f"Event note '{os.path.basename(p)}' has no 'In your words' section.")
+
+# 11. Claims without action: replies saying "I've updated/added/..." with no matching change in the ledger
+import sqlite3
+AGENT = next(iter(CONF.get("agents", {}).get("entries", {}) or {"main": 0}))
+DB = f"{HOME}/.openclaw/agents/{AGENT}/agent/openclaw-agent.sqlite"
+CLAIM = re.compile(r"(?i)\b(i've|i have|i just)\s+(updated|added|scheduled|created|noted|logged|recorded|saved|marked|booked|moved|deleted|documented|set up|put)\b")
+if os.path.exists(DB):
+    ledger_times = []
+    for f in sorted(glob.glob(f"{WS}/ledger/*.jsonl"))[-3:]:
+        for line in open(f):
+            try:
+                ledger_times.append(datetime.fromisoformat(json.loads(line)["ts"].replace("Z", "+00:00")).timestamp())
+            except (ValueError, KeyError):
+                pass
+    try:
+        db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=26)).strftime("%Y-%m-%dT%H:%M")
+        for (ej,) in db.execute("select event_json from transcript_events where event_json like '%\"role\":\"assistant\"%' and event_json > ''"):
+            try:
+                e = json.loads(ej)
+            except ValueError:
+                continue
+            ts, msg = e.get("timestamp", ""), e.get("message") or {}
+            if ts < cutoff or msg.get("role") != "assistant":
+                continue
+            text = " ".join(c.get("text", "") for c in (msg.get("content") or []) if isinstance(c, dict) and c.get("type") == "text")
+            m = CLAIM.search(text)
+            if not m or text[m.end():m.end() + 20].strip().lower().startswith(("my understanding", "my notes", "my memory")):
+                continue   # 'I've updated my understanding' isn't a claim to have changed anything
+            t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            if not any(t - 300 <= lt <= t + 300 for lt in ledger_times):   # writes can land just before or after the reply
+                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat said \"{text[max(0, m.start()-10):m.start()+90].strip()}…\" but nothing was changed.")
+    except sqlite3.Error:
+        pass
 
 # 8. Logs not ballooning
 _, out = sh("journalctl", "--user", "--disk-usage")

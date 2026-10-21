@@ -106,6 +106,7 @@ systemctl --user start openclaw-backup.service && echo "Test backup written to $
 
 echo "==> Daily outside check (plain code, no AI): messages you only if something is wrong"
 mkdir -p ~/.openclaw/checks && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
+{ echo "# Plugins allowed to be enabled (one per line). The daily check flags anything else."; for p in $keep; do echo "$p"; done; } > ~/.openclaw/checks/approved-plugins.txt
 cat > ~/.config/systemd/user/openclaw-check.service <<'EOF'
 [Unit]
 Description=Gremlin daily outside check (no AI)

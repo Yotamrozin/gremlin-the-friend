@@ -250,6 +250,8 @@ A model can't reliably audit itself: in testing, one changed a file it had just 
   - `AGENTS.md` is over budget, or new rule files have appeared at the workspace root;
   - a note `MEMORY.md` lists is missing;
   - an automation message is phrased as a question (see "Known problems");
+  - a plugin outside `~/.openclaw/checks/approved-plugins.txt` is enabled (an OpenClaw update can switch new ones on, and in testing the gremlin's own heartbeat audit missed one);
+  - **claims without action**: a reply says "I've updated / added / scheduled / noted…" but the ledger shows no matching change. In testing, the model did this several times a day;
   - the system logs are ballooning.
 
   Run `python3 ~/.openclaw/checks/daily-check.py --print` to see the report without sending it.
