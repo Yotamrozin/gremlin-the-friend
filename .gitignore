@@ -7,3 +7,5 @@ dist/
 
 # Local OpenClaw output (exports, state) must never be committed
 .openclaw/
+__pycache__/
+*.pyc
