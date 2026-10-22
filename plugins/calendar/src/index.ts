@@ -261,9 +261,12 @@ export default defineToolPlugin({
         calendar: Type.Optional(
           Type.String({ description: "Limit to one calendar by name. Omit to search all calendars." }),
         ),
+        minDurationDays: Type.Optional(
+          Type.Integer({ description: "Only events lasting at least this many days, e.g. 3 to find trips and long blocks (possible eras)." }),
+        ),
       }),
       outputSchema: Type.Array(EventOut),
-      async execute({ date, startISO, endISO, calendar }, config) {
+      async execute({ date, startISO, endISO, calendar, minDurationDays }, config) {
         const dav = await client(config);
         let start = startISO ? new Date(startISO) : new Date();
         let end = endISO ? new Date(endISO) : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -279,6 +282,14 @@ export default defineToolPlugin({
           await Promise.all(targets.map((cal) => listEventsInCalendar(dav, cal, start, end)))
         ).flat();
         events.sort((a, b) => a.start.localeCompare(b.start));
+        if (minDurationDays) {
+          // All-day events carry inclusive local dates; timed events carry instants. Either way, count whole days.
+          const days = (e: EventOutT) =>
+            e.allDay
+              ? Math.round((Date.parse(e.end ?? e.start) - Date.parse(e.start)) / 86400000) + 1
+              : (Date.parse(e.end ?? e.start) - Date.parse(e.start)) / 86400000;
+          return events.filter((e) => days(e) >= minDurationDays);
+        }
         return events;
       },
     }),

@@ -157,6 +157,13 @@ record("Reminder", ok, secs, "no reminder created" if not new else ("message is 
 for j in new:
     subprocess.run(["openclaw", "automations", "rm", j["id"]], capture_output=True, env=ENV)
 
+# 6. Recall (optional): questions about things the user told the bot, from checks/recall.json
+RECALL = f"{HOME}/.openclaw/checks/recall.json"
+for q in (json.load(open(RECALL)) if os.path.exists(RECALL) else []):
+    reply, secs = agent(q["question"])
+    missing = [w for w in q["expect"] if w.lower() not in reply.lower()]
+    record("Recall: " + q["question"][:40], not missing, secs, f"missing: {missing}" if missing else "")
+
 width = max(len(r[0]) for r in results)
 for name, ok, secs, detail in results:
     print(f"{'PASS' if ok else 'FAIL'}  {name:<{width}}  {secs:5.0f}s  {detail}")

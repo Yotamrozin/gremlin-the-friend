@@ -129,6 +129,7 @@ for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
 import sqlite3
 AGENT = next(iter(CONF.get("agents", {}).get("entries", {}) or {"main": 0}))
 DB = f"{HOME}/.openclaw/agents/{AGENT}/agent/openclaw-agent.sqlite"
+PROMISE = re.compile(r"(?i)\b(i'll|i will|let me)\s+(correct|create|add|fix|restore|record|save|update|document|set up|schedule)\b[^.]{0,80}\b(now|immediately|right away)\b")
 CLAIM = re.compile(r"(?i)\b(i've|i have|i just)\s+(updated|added|scheduled|created|noted|logged|recorded|saved|marked|booked|moved|deleted|documented|set up|put)\b")
 if os.path.exists(DB):
     ledger_times = []
@@ -150,6 +151,12 @@ if os.path.exists(DB):
             if ts < cutoff or msg.get("role") != "assistant":
                 continue
             text = " ".join(c.get("text", "") for c in (msg.get("content") or []) if isinstance(c, dict) and c.get("type") == "text")
+            if "Daily check found" in text:
+                continue   # relaying this check's own report is not a claim
+            t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            p = PROMISE.search(text)
+            if p and not any(t - 60 <= lt <= t + 600 for lt in ledger_times):
+                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat promised \"{text[p.start():p.end()+40].strip()}…\" and then changed nothing.")
             m = CLAIM.search(text)
             if not m or text[m.end():m.end() + 20].strip().lower().startswith(("my understanding", "my notes", "my memory")):
                 continue   # 'I've updated my understanding' isn't a claim to have changed anything
