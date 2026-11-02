@@ -6,7 +6,7 @@ set -euo pipefail
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
 # Models used for each option. Change these to try others.
-DEEPINFRA_MODEL="Qwen/Qwen3-235B-A22B-Instruct-2507"    # answers without a slow "thinking" step; reliable with gremlin tools
+DEEPINFRA_MODEL="${DEEPINFRA_MODEL:-Qwen/Qwen3-235B-A22B-Instruct-2507}"   # answers without a slow "thinking" step; reliable with gremlin tools. moonshotai/Kimi-K2.6 is stronger but about 7x the price
 OLLAMA_CLOUD_MODEL="deepseek-v4-flash"                  # open-weight model from Ollama's hosted catalog
 CLAUDE_MODEL="anthropic/claude-haiku-4-5"
 
@@ -96,7 +96,7 @@ case "$CHOICE" in
   # Voice notes: Signal voice messages are transcribed with DeepInfra's Whisper, so you can answer by talking.
   echo '[{"path":"tools.media","value":{"models":[{"provider":"deepinfra","model":"openai/whisper-large-v3-turbo","capabilities":["audio"]}],"audio":{"enabled":true}}}]' > /tmp/gremlin-audio.json
   openclaw config set --batch-file /tmp/gremlin-audio.json >/dev/null && rm -f /tmp/gremlin-audio.json
-  apply "deepinfra/$DEEPINFRA_MODEL" deepinfra "$(printf '{"baseUrl":"https://api.deepinfra.com/v1/openai","api":"openai-completions","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":64000}]}' "$(ref DEEPINFRA_API_KEY)" "$DEEPINFRA_MODEL" "$DEEPINFRA_MODEL")"
+  apply "deepinfra/$DEEPINFRA_MODEL" deepinfra "$(printf '{"baseUrl":"https://api.deepinfra.com/v1/openai","api":"openai-completions","apiKey":%s,"models":[{"id":"%s","name":"%s","contextTokens":128000}]}' "$(ref DEEPINFRA_API_KEY)" "$DEEPINFRA_MODEL" "$DEEPINFRA_MODEL")"
   ;;
 3)
   echo "Create an API key at ollama.com > Settings > Keys."
