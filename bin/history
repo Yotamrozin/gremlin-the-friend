@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Read-only change history of the workspace (rules, notes, lists), for answering "what changed and when".
+#   history [N]          last N commits (default 20) with the files each one touched
+#   history show <rev>   one commit in full
+#   history file <path>  every commit that touched a file
+set -euo pipefail
+cd "$HOME/.openclaw/workspace"
+case "${1:-}" in
+  show) git --no-pager show --stat --patch "$2" ;;
+  file) git --no-pager log --oneline --follow -- "$2" ;;
+  *)    git --no-pager log --stat --format='%h %ad %s' --date=short -n "${1:-20}" ;;
+esac

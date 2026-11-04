@@ -16,7 +16,7 @@ _bk = open(f"{HOME}/.openclaw/openclaw-backup.sh").read() if os.path.exists(f"{H
 _m = re.search(r'^DEST="([^"]+)"', _bk, re.M)
 BACKUPS = _m.group(1) if _m else f"{HOME}/openclaw-backups"
 VAULT = ((CONF.get("plugins", {}).get("entries", {}).get("memories") or {}).get("config") or {}).get("vaultPath")  # optional
-ROOT_FILES = {"AGENTS.md", "SOUL.md", "USER.md", "IDENTITY.md", "MEMORY.md", "RULES.md", "DREAMS.md"}
+ROOT_FILES = {"AGENTS.md", "SOUL.md", "USER.md", "IDENTITY.md", "MEMORY.md"}
 AGENTS_BUDGET = 12000          # bytes; past this, rules start crowding out the conversation
 NARRATIVE_JOB = "Nightly narrative pass"  # the one automation allowed to edit vault notes
 ENV = dict(os.environ, PATH=f"{HOME}/.npm-global/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")
@@ -49,11 +49,17 @@ if "Listening: 127.0.0.1:18789" not in out or "Connectivity probe: ok" not in ou
 code, out = sh("curl", "-s", "-m", "5", "-o", "/dev/null", "-w", "%{http_code}", "http://127.0.0.1:8080/api/v1/check")
 if out.strip() != "200":
     problems.append("Signal daemon isn't answering.")
+_t = CONF["plugins"]["entries"]["tasks"]["config"]
+code, out = sh("curl", "-s", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}", "-u", f"{_t['username']}:{_t['password']}", _t["serverUrl"])
+if out.strip() not in ("200", "207", "301", "302"):
+    problems.append(f"The task server ({_t['serverUrl']}) isn't answering, so the bot can't read or change tasks.")
 
 # 3. No silent fallback to another brain
-_, out = sh("openclaw", "config", "get", "agents.defaults.model.fallbacks")
-if out.strip() not in ("[]", "") and "unset" not in out:
-    problems.append(f"Model fallbacks are configured ({out.strip()}); data could silently go to another brain.")
+# (A fallback on the same provider is fine: same privacy terms, it only steps in when the main model fails.)
+_model = CONF["agents"]["defaults"]["model"]
+other = [f for f in _model.get("fallbacks") or [] if f.split("/")[0] != _model["primary"].split("/")[0]]
+if other:
+    problems.append(f"Model fallbacks go to another provider ({', '.join(other)}); data could silently go to another brain.")
 
 # 4. Rules: one file, within budget, no new rule files
 if os.path.getsize(f"{WS}/AGENTS.md") > AGENTS_BUDGET:
@@ -64,10 +70,22 @@ if extra:
 
 # 5. Every context note MEMORY.md lists exists
 memory = open(f"{WS}/MEMORY.md").read()
-for name in re.findall(r"`([\w.-]+\.md)`", memory):
-    if not (glob.glob(f"{WS}/memory/context/{name}") or glob.glob(f"{WS}/memory-system/{name}")
-            or glob.glob(f"{WS}/drafts/{name}") or glob.glob(f"{WS}/{name}")):
+for name in re.findall(r"`([\w./-]+\.md)`", memory):
+    if not any(os.path.exists(f"{WS}/{d}{name}") for d in ("", "memory/context/", "memory-system/", "drafts/")):
         problems.append(f"MEMORY.md lists {name}, which doesn't exist.")
+
+# 12. No secrets in notes: card or account numbers, IBANs, API keys or tokens in the workspace or vault
+SECRET = re.compile(
+    r"(?<![\w/.-])(?:\d[ -]?){12,18}\d(?![\w/-])"                # card / account numbers (13–19 digits)
+    r"|\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?\b"  # IBAN
+    r"|\b(?:sk|pk|ghp|gho|xox[bp]|AKIA)[-_]?(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}")  # common API key prefixes
+for p in glob.glob(f"{WS}/**/*.md", recursive=True) + (glob.glob(f"{VAULT}/**/*.md", recursive=True) if VAULT else []):
+    if "/memory/archive/" in p:
+        continue
+    m = SECRET.search(open(p, encoding="utf-8", errors="ignore").read())
+    if m:
+        where = os.path.relpath(p, VAULT) if VAULT and p.startswith(VAULT) else os.path.relpath(p, WS)
+        problems.append(f"{where} contains something that looks like a secret or account number (ending …{m.group(0)[-4:]}).")
 
 # 6. Automation messages must be instructions, not questions to the user
 jobs = (oc_json("automations", "list", "--all") or oc_json("automations", "list") or {}).get("jobs", [])
@@ -108,7 +126,7 @@ if writes:
 for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
     if os.path.getmtime(p) >= since.timestamp():
         head = open(p, encoding="utf-8", errors="ignore").read(800)
-        if "source: user" not in head:
+        if "source: user" not in head and "source: legacy" not in head:
             problems.append(f"Event note '{os.path.basename(p)}' changed without 'source: user'.")
 
 # 9. Only approved plugins enabled (the heartbeat's own audit missed one; this doesn't rely on the model)
@@ -122,14 +140,15 @@ if os.path.exists(approved_file):
 
 # 10. Vault event notes keep the user's own words
 for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
-    if os.path.getmtime(p) >= since.timestamp() and "## In your words" not in open(p, encoding="utf-8", errors="ignore").read():
+    text = open(p, encoding="utf-8", errors="ignore").read()
+    if os.path.getmtime(p) >= since.timestamp() and "## In your words" not in text and "source: legacy" not in text[:800]:
         problems.append(f"Event note '{os.path.basename(p)}' has no 'In your words' section.")
 
 # 11. Claims without action: replies saying "I've updated/added/..." with no matching change in the ledger
 import sqlite3
 AGENT = next(iter(CONF.get("agents", {}).get("entries", {}) or {"main": 0}))
 DB = f"{HOME}/.openclaw/agents/{AGENT}/agent/openclaw-agent.sqlite"
-PROMISE = re.compile(r"(?i)\b(i'll|i will|let me)\s+(correct|create|add|fix|restore|record|save|update|document|set up|schedule)\b[^.]{0,80}\b(now|immediately|right away)\b")
+PROMISE = re.compile(r"(?i)\b(i'll|i will|let me)\s+(correct|create|add|fix|restore|record|save|update|document|set up|schedule)\b[^.]{0,80}\b(now|immediately|right away)\b|\b(i'll|i will)\s+(keep\s+)?(remind|nudg|ping)\w*\s+you")
 CLAIM = re.compile(r"(?i)\b(i've|i have|i just)\s+(updated|added|scheduled|created|noted|logged|recorded|saved|marked|booked|moved|deleted|documented|set up|put)\b")
 if os.path.exists(DB):
     ledger_times = []
@@ -165,6 +184,34 @@ if os.path.exists(DB):
                 problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat said \"{text[max(0, m.start()-10):m.start()+90].strip()}…\" but nothing was changed.")
     except sqlite3.Error:
         pass
+
+# 13. Rule changes: show what changed, flag vague or repeated wording, and rerun the regression suite
+import difflib
+RULE_FILES = ["AGENTS.md", "USER.md", "SOUL.md"]
+VAGUE = re.compile(r"(?i)\b(be careful|be mindful|appropriate(ly)?|try to|if possible|as needed|when relevant|use (your )?judge?ment|where sensible|properly)\b")
+STATE = f"{HOME}/.openclaw/checks/state"
+os.makedirs(STATE, exist_ok=True)
+rules_changed = []
+for name in (n for n in RULE_FILES if os.path.exists(f"{WS}/{n}")):
+    cur = open(f"{WS}/{name}", encoding="utf-8").read().splitlines()
+    seen = f"{STATE}/{name}"
+    old = open(seen, encoding="utf-8").read().splitlines() if os.path.exists(seen) else None
+    if old is not None and old != cur:
+        rules_changed.append(name)
+        diff = [l for l in difflib.unified_diff(old, cur, lineterm="", n=0) if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+        problems.append(f"ℹ️ {name} changed:\n" + "\n".join(d[:200] for d in diff[:20]) + ("\n…" if len(diff) > 20 else ""))
+        for added in (d[1:] for d in diff if d.startswith("+") and d[1:].strip()):
+            if (m := VAGUE.search(added)):
+                problems.append(f"New wording in {name} is vague (\"{m.group(0)}\"); say what to do, observably: {added[:120]}")
+            twin = next((o for o in cur if len(o) > 40 and o != added and difflib.SequenceMatcher(None, o, added).ratio() > 0.8), None)
+            if twin:
+                problems.append(f"New line in {name} nearly repeats another:\n  new: {added[:120]}\n  old: {twin[:120]}")
+    if "--print" not in sys.argv:
+        open(seen, "w", encoding="utf-8").write("\n".join(cur))
+if rules_changed and "--print" not in sys.argv:
+    _, out = sh("python3", f"{HOME}/.openclaw/checks/regression.py", timeout=1800)
+    fails = [l for l in out.splitlines() if l.startswith("FAIL")]
+    problems.append("Regression tests after the rule change: " + ("all passed." if "PASS" in out and not fails else "\n" + "\n".join(fails or [out[-300:]])))
 
 # 8. Logs not ballooning
 _, out = sh("journalctl", "--user", "--disk-usage")

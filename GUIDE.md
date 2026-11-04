@@ -205,14 +205,16 @@ To check it: `openclaw plugins list` shows both plugins enabled. In Signal, send
 **How the tools behave:**
 - Deletes need `confirm: true`, which the bot may set only after you explicitly confirm.
 - Events accept `recurrence` and `expectedWeekday`. The weekday check exists because the model once put an event on the wrong day of the week.
+- A timed event that overlaps another one (in any calendar) isn't created: the bot is told the conflict and asks you. It retries with `conflictsOk` only if you agree.
 - New calendars and task lists can be created from chat.
 
 ## H. Hardening and backups — `linux/06-harden.sh [backup-folder]`
 
 The script does the following:
 - Disables every plugin except the brain providers (`anthropic`, `ollama`, `deepinfra`), `signal`, `memory-core`, `calendar` and `tasks`. A default install enables about 30.
-- Gives the gremlin only the tools it uses, with no tool search, and a heartbeat every 4 hours in its own session.
-- Installs `RULES.md` and adds the kit's rules to `AGENTS.md`.
+- Gives the gremlin only the tools it uses, with no tool search and no heartbeat (the daily check below does its job in plain code). File tools stay inside the workspace.
+- **Limits the shell to five small scripts** in `~/.openclaw/bin/`, through OpenClaw's exec allowlist: `remind` (scheduling; always delivers to you), `history` (the workspace's git log), `when` (weekdays and date arithmetic), `calc` (sums) and `status` (gateway, Signal, tasks server, backups, scheduled jobs). Anything else the bot tries to run is refused. In testing, a model with a full shell sent a reminder to a mistyped phone number and invented a commit hash instead of looking it up.
+- Adds the kit's rules to `AGENTS.md` (one rulebook; older versions of the kit also installed a separate `RULES.md`).
 - Switches off OpenClaw's overnight "dreaming": it writes free-form diary entries and can promote them into `MEMORY.md`.
 - Makes the workspace private, adds a systemd drop-in with `UMask=0077` and `DISABLE_ERROR_REPORTING=1`, and puts the workspace under git.
 - Sets up the nightly backup (04:00, `Persistent=true`) and the daily outside check (09:30); see section I.
@@ -234,7 +236,7 @@ The script does the following:
 - [ ] **Treat every ClawHub skill as code from a stranger.** Read it before installing.
 - [ ] **Check for OpenClaw updates weekly.**
 
-**Heartbeat:** `openclaw doctor` may migrate `HEARTBEAT.md` into the heartbeat automation's scratch. To change the checklist, use `openclaw automations list`, then `openclaw automations scratch <id> --file checklist.md`. If the heartbeat reports "HEARTBEAT.md missing", that's why. The kit's `AGENTS.md` already points at `RULES.md` instead.
+**Upgrading from an older kit:** `AGENTS.md` gets the new rules only if it doesn't already have them. If yours has the old `## Timed reminders` block or a `RULES.md`, replace that block with `workspace/AGENTS-additions.md` by hand, move anything you added to `RULES.md` into `AGENTS.md`, and delete `RULES.md`. Then send the bot `/new`.
 
 **Limits of the rulebook:** it catches drift (a forgotten plugin, a reverted config), not a compromised agent. That's what section I is for.
 
@@ -245,28 +247,36 @@ A model can't reliably audit itself: in testing, one changed a file it had just 
 - **Activity ledger.** The calendar and tasks plugins append one JSON line per real change (event created, task completed, item deleted) to `~/.openclaw/workspace/ledger/<date>.jsonl`. The record of what happened is written by the tools, not remembered by the model.
 - **Daily outside check** (`checks/daily-check.py`, 09:30 via `openclaw-check.timer`). It messages you on Signal **only when something is wrong**:
   - the newest backup is older than 30 hours;
-  - the gateway is unhealthy or not bound to 127.0.0.1, or Signal isn't answering;
-  - model fallbacks have appeared (data could silently go to another brain);
+  - the gateway is unhealthy or not bound to 127.0.0.1, or Signal or the tasks server isn't answering;
+  - model fallbacks to another provider have appeared (data could silently go to another brain; a fallback on the same provider is fine);
   - `AGENTS.md` is over budget, or new rule files have appeared at the workspace root;
+  - **the rules changed**: you get the diff, any vague wording ("be careful", "try to", "as needed") or near-duplicate lines are flagged, and the regression tests run again;
   - a note `MEMORY.md` lists is missing;
+  - a note contains something that looks like a card or account number, an IBAN or an API key;
   - an automation message is phrased as a question (see "Known problems");
   - a plugin outside `~/.openclaw/checks/approved-plugins.txt` is enabled (an OpenClaw update can switch new ones on, and in testing the gremlin's own heartbeat audit missed one);
-  - **claims without action**: a reply says "I've updated / added / scheduled / noted…" but the ledger shows no matching change. In testing, the model did this several times a day;
+  - **claims without action**: a reply says "I've updated / added / scheduled / noted…", or promises "I'll remind you", but the ledger shows no matching change. In testing, the model did this several times a day;
   - the system logs are ballooning.
 
   Run `python3 ~/.openclaw/checks/daily-check.py --print` to see the report without sending it.
-- **Regression tests** (`checks/regression.py`). **Run them after any change to the brain, model, plugins or rules.** Five standard requests go through the real agent in fresh sessions, and the answers are checked against the real calendar and task server:
+- **Regression tests** (`checks/regression.py`). **Run them after any change to the brain, model, plugins or rules** (the daily check does this by itself after a rule change). Standard requests go through the real agent in fresh sessions, and the answers are checked against the real calendar, task server and workspace history:
   1. tomorrow's events, all-day ones included;
   2. tasks completed today;
   3. creating a task;
   4. the weekday guard: a mismatched weekday must not create an event;
-  5. a reminder phrased as an instruction.
+  5. a reminder that's created and sensibly worded;
+  6. the latest workspace change, which must match the real commit (one model invented a hash);
+  7. the weekday of a date months away.
 
   Anything they create is removed again. They take a few minutes and cost a few cents. Run them with `python3 ~/.openclaw/checks/regression.py`.
 
 ## Reminders
 
-The bot schedules reminders with `openclaw automations add ... --at 20m --announce --channel signal --to <owner>`. The rules in `AGENTS.md` teach it this, because its first instinct is to try `sleep`, which is blocked. Timing precision is about one minute.
+The bot schedules reminders with `~/.openclaw/bin/remind add --name … --at 20m --say "…"`. Two kinds:
+- **`--say`:** the text is sent exactly as written, with no model involved, so a question like "Did you call the dentist?" arrives as is.
+- **`--task`:** an instruction the bot carries out at that time, for things that need a lookup first, like a summary. It's refused if it ends in "?": as a question, the scheduled run would answer it itself.
+
+`remind` always delivers to the first number in `channels.signal.allowFrom`, so a reminder can't go to anyone else. Timing precision is about one minute. If the PC was asleep at that time, the job runs when it wakes.
 
 ## Known problems
 
@@ -277,6 +287,7 @@ The bot schedules reminders with `openclaw automations add ... --at 20m --announ
 | Bot dead after reboot, sleep, or hours idle | WSL shut down: the keepalive process is missing | `Start-ScheduledTask "OpenClaw Keepalive"`; check section B |
 | Tasks.org: "connection abort", hang or 500, after working before | 1. WSL crash-looping because the keepalive lapsed. Sign: `systemctl --user show -p MainPID` changes every ~20 s. 2. Phone off the tailnet. | 1. Start the keepalive. 2. Tailscale app on the phone: sign out and back in; check Always-on VPN and Private DNS |
 | Tasks.org: CLEARTEXT not permitted | Plain HTTP URL | Use the `https://…ts.net/` URL (section F) |
+| The bot's task tools fail with "fetch failed" (the phone app still works) | The bot was set up with the `…ts.net` name, which stops resolving when Tailscale's DNS lapses (e.g. after sleep) | Point the bot at the server directly: `plugins.entries.tasks.config.serverUrl` = `http://<tailscale ip -4>:5232/`. The kit's step 5 does this now |
 | Step G says 401, or the bot says it can't log in to the calendar | Wrong email, or the main password was used instead of an app password | Make a new app password; re-run `05-plugins.sh` |
 | Calendar (This PC) missing on the phone | DAVx5 account not added, or "Calendar" not ticked in DAVx5 | Section G, "Calendar on the phone" |
 | Tasks list always empty (custom code) | tsdav filters to VEVENT by default | Pass a VTODO comp-filter (already done in the kit plugin) |
@@ -286,7 +297,7 @@ The bot schedules reminders with `openclaw automations add ... --at 20m --announ
 | Config rejected | Old field names or JSON5 syntax | `openclaw doctor`; section E field list |
 | `ECONNREFUSED 127.0.0.1:18789` | Linger off | `sudo loginctl enable-linger $USER` |
 | Event on the wrong weekday | Model date arithmetic | Ask with the weekday; the tool checks `expectedWeekday` |
-| Bot tries `sleep` for reminders | Doesn't know about automations | `AGENTS.md` reminders section; `/new` |
+| Bot tries `sleep` or `openclaw automations` for reminders | Old rulebook | `AGENTS.md` reminders section (`remind`); `/new` |
 | Heartbeat: HEARTBEAT.md missing | Migrated into the automation scratch | See section H, Heartbeat |
 | A daily summary lists things done on other days, or invents activities | The automation's message was a question ("What got done today?"), so the run answered it itself; and nothing told it *when* tasks were done | Write automation messages as instructions ("Send the user…"); "done today" comes from `tasks_list` with `completedOn` = today. The daily check flags question-style messages. |
 | The bot claims it fixed something it didn't | Models report intentions as results | `AGENTS.md`: only claim what a tool result confirms; check the ledger or the file itself |

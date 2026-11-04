@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""The bot's only way to schedule things. Delivery always goes to the first allowlisted Signal number,
+so a scheduled message can't reach anyone else.
+
+  remind add --name "<short name>" (--at <30m|ISO> | --every <1h> | --cron "<expr>") (--say "<text>" | --task "<instruction>")
+  remind list | remind runs [<id>] | remind remove <id>
+
+--say: the text is sent exactly as written, no model involved (questions are fine).
+--task: an instruction the bot carries out at that time, e.g. a summary that needs a lookup first.
+"""
+import argparse, json, os, subprocess, sys
+
+HOME = os.path.expanduser("~")
+ENV = dict(os.environ, PATH=f"{HOME}/.npm-global/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")
+
+
+def oc(*args):
+    sys.exit(subprocess.run(["openclaw", "automations", *args], env=ENV, cwd=HOME).returncode)
+
+
+p = argparse.ArgumentParser(prog="remind")
+sub = p.add_subparsers(dest="cmd", required=True)
+a = sub.add_parser("add")
+a.add_argument("--name", required=True)
+what = a.add_mutually_exclusive_group(required=True)
+what.add_argument("--say")
+what.add_argument("--task")
+what.add_argument("--message", dest="task", help=argparse.SUPPRESS)   # old spelling of --task
+when = a.add_mutually_exclusive_group(required=True)
+when.add_argument("--at")
+when.add_argument("--every")
+when.add_argument("--cron")
+sub.add_parser("list")
+r = sub.add_parser("runs")
+r.add_argument("id", nargs="?")
+rm = sub.add_parser("remove")
+rm.add_argument("id")
+args = p.parse_args()
+
+if args.cmd == "list":
+    oc("list")
+if args.cmd == "runs":
+    oc("runs", *([args.id] if args.id else []))
+if args.cmd == "remove":
+    oc("rm", args.id)
+
+# add
+if args.task and args.task.rstrip().endswith("?"):
+    sys.exit("A --task is an instruction to you, carried out at that time; as a question you'd answer it yourself. "
+             "To send the user a question or any fixed text, use --say \"<the text>\".")
+conf = json.load(open(f"{HOME}/.openclaw/openclaw.json"))
+to = conf["channels"]["signal"]["allowFrom"][0]
+schedule = ["--at", args.at, "--delete-after-run"] if args.at else ["--every", args.every] if args.every else ["--cron", args.cron]
+payload = (["--command-argv", json.dumps(["printf", "%s\n", args.say])] if args.say
+           else ["--session", "isolated", "--message", args.task])
+r = subprocess.run(["openclaw", "automations", "add", "--name", args.name, *schedule, *payload,
+                    "--announce", "--channel", "signal", "--to", to, "--json"],
+                   env=ENV, cwd=HOME, capture_output=True, text=True)
+try:
+    job = json.loads(r.stdout)
+except ValueError:
+    sys.exit(f"Not scheduled: {(r.stderr or r.stdout).strip()[-300:]}")
+from datetime import datetime, timezone
+with open(f"{HOME}/.openclaw/workspace/ledger/{datetime.now():%Y-%m-%d}.jsonl", "a") as f:
+    f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "action": "reminder_scheduled",
+                        "name": args.name, "when": args.at or args.every or args.cron, "id": job["id"]}) + "\n")
+print(f"Scheduled \"{args.name}\" ({args.at or args.every or args.cron}, {'sent as written' if args.say else 'carried out by you'}), "
+      f"id {job['id']}. To cancel: ~/.openclaw/bin/remind remove {job['id']}")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for the gremlin: run after any change to the brain, model, plugins or rules.
 
-Five standard requests go through the real agent in fresh test sessions. Answers are checked against
+Standard requests go through the real agent in fresh test sessions. Answers are checked against
 the real calendar and task server (CalDAV), never against what the bot says
 about itself. Anything a test creates is removed again. Costs a few cents per run.
 Usage: regression.py
@@ -151,13 +151,25 @@ before = {j["id"] for j in json.loads(subprocess.run(["openclaw", "automations",
 reply, secs = agent("Remind me in 3 hours to drink water.")
 jobs = json.loads(subprocess.run(["openclaw", "automations", "list", "--json"], capture_output=True, text=True, env=ENV).stdout or '{"jobs": []}').get("jobs", [])
 new = [j for j in jobs if j["id"] not in before]
-msg = ((new[0].get("payload") or {}).get("message") or "") if new else ""
-ok = bool(new) and not msg.strip().endswith("?")
-record("Reminder", ok, secs, "no reminder created" if not new else ("message is a question: " + msg[:80] if not ok else ""))
+pl = (new[0].get("payload") or {}) if new else {}
+said = pl.get("kind") == "command"   # --say: sent as written, a question is fine there
+msg = (pl.get("argv") or [""])[-1] if said else (pl.get("message") or "")
+ok = bool(new) and "water" in msg.lower() and (said or not msg.strip().endswith("?"))
+record("Reminder", ok, secs, "no reminder created" if not new else ("" if ok else "bad message: " + msg[:80]))
 for j in new:
     subprocess.run(["openclaw", "automations", "rm", j["id"]], capture_output=True, env=ENV)
 
-# 6. Recall (optional): questions about things the user told the bot, from checks/recall.json
+# 6. No invented facts: the latest workspace change must come from the real history (Nov 3 2026 it made up a hash)
+truth = subprocess.run(["git", "-C", f"{HOME}/.openclaw/workspace", "log", "-1", "--format=%h"], capture_output=True, text=True).stdout.strip()
+reply, secs = agent("What was the most recent change to your workspace? Give its commit hash.")
+record("Latest change (no invention)", truth in reply, secs, "" if truth in reply else f"expected {truth}: {reply[:80]}")
+
+# 7. Weekdays from code, not guesses
+d = date.today() + timedelta(days=137)
+reply, secs = agent(f"What day of the week is {d:%-d %B %Y}?")
+record("Weekday of a date", f"{d:%A}" in reply, secs, "" if f"{d:%A}" in reply else f"expected {d:%A}: {reply[:80]}")
+
+# 8. Recall (optional): questions about things the user told the bot, from checks/recall.json
 RECALL = f"{HOME}/.openclaw/checks/recall.json"
 for q in (json.load(open(RECALL)) if os.path.exists(RECALL) else []):
     reply, secs = agent(q["question"])

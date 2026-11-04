@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Date arithmetic, so weekdays and day counts come from code, not guesses. Uses the host's local date.
+
+  when 2026-11-14            weekday and how far from today
+  when friday                the next Friday (not today)
+  when today +3w             also +10d, -2d, +1m, +1y; several offsets add up
+  when 2026-11-03 2026-12-01 days between two dates
+"""
+import calendar, re, sys
+from datetime import date, timedelta
+
+DAYS = [d.lower() for d in calendar.day_name]
+
+
+def parse(tok, today):
+    t = tok.lower()
+    if t in ("today", "now"):
+        return today
+    if t == "tomorrow":
+        return today + timedelta(1)
+    if t == "yesterday":
+        return today - timedelta(1)
+    for i, d in enumerate(DAYS):
+        if len(t) >= 3 and d.startswith(t):
+            return today + timedelta((i - today.weekday() - 1) % 7 + 1)
+    return date.fromisoformat(tok)
+
+
+def shift(d, tok):
+    n, unit = int(tok[:-1]), tok[-1]
+    if unit in "dw":
+        return d + timedelta(n * (7 if unit == "w" else 1))
+    months = d.month - 1 + n * (12 if unit == "y" else 1)
+    y, m = d.year + months // 12, months % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def describe(d, today):
+    n = (d - today).days
+    rel = "today" if n == 0 else f"in {n} day{'s' * (n != 1)}" if n > 0 else f"{-n} day{'s' * (n != -1)} ago"
+    return f"{d:%A %-d %B %Y} ({d.isoformat()}), {rel}"
+
+
+def main(argv, today):
+    if not argv:
+        return __doc__.strip()
+    dates, d = [], None
+    for tok in argv:
+        if re.fullmatch(r"[+-]\d+[dwmy]", tok):
+            d = shift(d or today, tok)
+        else:
+            if d is not None:
+                dates.append(d)
+            d = parse(tok, today)
+    dates.append(d)
+    if len(dates) == 2:
+        return f"{(dates[1] - dates[0]).days} days from {dates[0]:%a %-d %b %Y} to {dates[1]:%a %-d %b %Y}"
+    return describe(dates[0], today)
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["--test"]:
+        t = date(2026, 11, 3)   # a Tuesday
+        assert main(["2026-11-14"], t).startswith("Saturday 14 November 2026") and "in 11 days" in main(["2026-11-14"], t)
+        assert "2026-11-06" in main(["friday"], t) and "2026-11-10" in main(["tue"], t)
+        assert "2026-11-24" in main(["today", "+3w"], t) and "2027-02-28" in main(["2027-01-31", "+1m"], t)
+        assert main(["2026-11-03", "2026-12-01"], t).startswith("28 days")
+        assert "1 day ago" in main(["yesterday"], t)
+        print("ok")
+    else:
+        try:
+            print(main(sys.argv[1:], date.today()))
+        except ValueError as e:
+            sys.exit(f"Couldn't read that: {e}. {__doc__.strip()}")
