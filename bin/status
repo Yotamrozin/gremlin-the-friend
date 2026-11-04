@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Is everything working? Facts from the system itself, read-only: gateway, Signal, backups, scheduled jobs."""
+import glob, json, os, re, subprocess, time
+from datetime import datetime
+
+HOME = os.path.expanduser("~")
+ENV = dict(os.environ, PATH=f"{HOME}/.npm-global/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")
+
+
+def sh(*args):
+    r = subprocess.run(args, capture_output=True, text=True, env=ENV, cwd=HOME, timeout=60)
+    return r.stdout.strip()
+
+
+def ago(ts):
+    h = (time.time() - ts) / 3600
+    return f"{h:.0f} hours ago" if h < 48 else f"{h / 24:.0f} days ago"
+
+
+print("Gateway:", sh("systemctl", "--user", "is-active", "openclaw-gateway"))
+print("Signal daemon:", "answering" if sh("curl", "-s", "-m", "5", "-o", "/dev/null", "-w", "%{http_code}",
+                                          "http://127.0.0.1:8080/api/v1/check") == "200" else "NOT answering")
+_t = json.load(open(f"{HOME}/.openclaw/openclaw.json"))["plugins"]["entries"]["tasks"]["config"]
+print("Task server:", "answering" if sh("curl", "-s", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}", "-u",
+                                       f"{_t['username']}:{_t['password']}", _t["serverUrl"]) in ("200", "207", "301", "302") else "NOT answering")
+dest = re.search(r'^DEST="([^"]+)"', open(f"{HOME}/.openclaw/openclaw-backup.sh").read(), re.M).group(1)
+snaps = sorted(glob.glob(f"{dest}/*openclaw-backup*.tar.gz"), key=os.path.getmtime)
+print("Last backup:", f"{os.path.basename(snaps[-1])}, {ago(os.path.getmtime(snaps[-1]))}" if snaps else "none found")
+print("Last workspace change:", sh("git", "-C", f"{HOME}/.openclaw/workspace", "log", "-1", "--format=%h %ad %s", "--date=format:%Y-%m-%d %H:%M"))
+try:
+    jobs = json.loads(sh("openclaw", "automations", "list", "--json"))["jobs"]
+except (ValueError, KeyError):
+    jobs = None
+if jobs is None:
+    print("Scheduled jobs: couldn't read them (is the gateway up?)")
+else:
+    bad = [j for j in jobs if j.get("enabled", True) and ((j.get("state") or {}).get("consecutiveErrors") or 0) > 0]
+    print(f"Scheduled jobs: {len(jobs)}, " + ("all last runs OK" if not bad else "failing: " + ", ".join(
+        f"{j['name']} ({j['state'].get('lastStatus')}, {j['state']['consecutiveErrors']}x)" for j in bad)))
+    for j in sorted(jobs, key=lambda j: (j.get("state") or {}).get("lastRunAtMs") or 0)[-3:]:
+        s = j.get("state") or {}
+        if s.get("lastRunAtMs"):
+            print(f"  ran {datetime.fromtimestamp(s['lastRunAtMs'] / 1000):%a %H:%M}: {j['name']} ({s.get('lastStatus')}, {s.get('lastDeliveryStatus', '-')})")

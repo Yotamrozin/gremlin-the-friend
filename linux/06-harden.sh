@@ -13,22 +13,38 @@ for id in $(openclaw plugins list --json 2>/dev/null | python3 -c 'import json,s
   [[ "$keep" == *" $id "* ]] || openclaw plugins disable "$id" || true
 done
 
-echo "==> Only the tools the gremlin uses, and a quiet heartbeat"
+echo "==> Only the tools the gremlin uses, no heartbeat"
 # Measured on a real gremlin: 53 tools behind a search step cost an extra model call per request, and a
-# 30-minute heartbeat running inside the chat bloated every later call to ~76k tokens. These settings fix both.
+# 30-minute heartbeat running inside the chat bloated every later call to ~76k tokens. The heartbeat's checks
+# now run as plain code in the daily check (below), so it's off. No `cron` tool: the bot schedules through
+# `remind`, which always delivers to the owner. File tools stay inside the workspace.
 cat > /tmp/gremlin-tools.json <<'J'
-[{"path":"tools","value":{"profile":"minimal","toolSearch":false,"alsoAllow":[
- "cron","read","write","edit","exec","memory_search","memory_get",
+[{"path":"tools","value":{"profile":"minimal","toolSearch":false,"fs":{"workspaceOnly":true},"alsoAllow":[
+ "read","write","edit","exec","memory_search","memory_get",
  "calendar_list_calendars","calendar_create_calendar","calendar_list_events","calendar_create_event","calendar_delete_event",
  "tasks_list_lists","tasks_create_list","tasks_list","tasks_create","tasks_complete","tasks_delete"]}},
- {"path":"agents.defaults.heartbeat","value":{"every":"4h","isolatedSession":true}}]
+ {"path":"agents.defaults.heartbeat","value":{"every":"0m"}}]
 J
 openclaw config set --batch-file /tmp/gremlin-tools.json --replace
 rm -f /tmp/gremlin-tools.json
 
+echo "==> The only shell commands the bot may run: the kit's small scripts"
+# A model with a full shell can do anything; with an allowlist it can only run these: remind (scheduling),
+# history (the workspace's git log), when (dates), calc (sums) and status (is everything working).
+mkdir -p ~/.openclaw/bin
+for s in remind history when calc status; do install -m 755 "$KIT/bin/$s" ~/.openclaw/bin/$s; done
+openclaw approvals get --json | python3 -c '
+import json, os, sys
+conf = json.load(open(os.path.expanduser("~/.openclaw/openclaw.json")))
+agent = next(iter(conf.get("agents", {}).get("entries", {}) or {"main": 0}))
+f = json.load(sys.stdin)["file"]
+f.setdefault("agents", {})[agent] = {"security": "allowlist", "ask": "off", "askFallback": "deny", "autoAllowSkills": False,
+    "allowlist": [{"pattern": f"~/.openclaw/bin/{s}"} for s in ("remind", "history", "when", "calc", "status")]}
+json.dump(f, open("/tmp/gremlin-approvals.json", "w"))'
+openclaw approvals set --file /tmp/gremlin-approvals.json >/dev/null && rm -f /tmp/gremlin-approvals.json
+
 echo "==> Rulebook for the bot"
-cp "$KIT/workspace/RULES.md" "$W/RULES.md"
-grep -q '## Timed reminders' "$W/AGENTS.md" 2>/dev/null || cat "$KIT/workspace/AGENTS-additions.md" >> "$W/AGENTS.md"
+grep -q '## Reminders and scheduled actions' "$W/AGENTS.md" 2>/dev/null || cat "$KIT/workspace/AGENTS-additions.md" >> "$W/AGENTS.md"
 
 echo "==> Private file permissions, no error reporting, private files by default"
 chmod 700 "$W"; chmod 600 "$W"/*.md
@@ -105,7 +121,8 @@ systemctl --user enable --now openclaw-backup.timer
 systemctl --user start openclaw-backup.service && echo "Test backup written to $DEST"
 
 echo "==> Daily outside check (plain code, no AI): messages you only if something is wrong"
-mkdir -p ~/.openclaw/checks && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
+mkdir -p ~/.openclaw/checks/state && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
+for f in AGENTS.md USER.md SOUL.md; do [ -f "$W/$f" ] && cp "$W/$f" ~/.openclaw/checks/state/$f; done   # baseline: later rule changes get reported
 { echo "# Plugins allowed to be enabled (one per line). The daily check flags anything else."; for p in $keep; do echo "$p"; done; } > ~/.openclaw/checks/approved-plugins.txt
 cat > ~/.config/systemd/user/openclaw-check.service <<'EOF'
 [Unit]

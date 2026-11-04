@@ -69,7 +69,8 @@ Claude Code is only the installer. It sees the setup commands and their output, 
 | [`windows/`](windows/) | Autostart: hidden scheduled tasks plus a watchdog that keeps WSL2 running |
 | [`linux/`](linux/) | Six numbered install scripts plus `brain.sh` (choose or switch the brain), run inside Ubuntu (WSL) |
 | [`plugins/`](plugins/) | The calendar (any CalDAV server) and tasks plugins for OpenClaw |
-| [`workspace/`](workspace/) | The gremlin's rulebook (`RULES.md`) and additions to `AGENTS.md` |
+| [`workspace/`](workspace/) | The gremlin's rulebook: additions to `AGENTS.md` |
+| [`bin/`](bin/) | The only shell commands the bot may run: `remind`, `history`, `when`, `calc`, `status` |
 | [`checks/`](checks/) | Plain-code safety net: a daily outside check that alerts you on Signal, and regression tests to run after changes |
 
 ## Status

@@ -299,7 +299,9 @@ export default defineToolPlugin({
       description:
         "Create a new event, optionally recurring. Pass `calendar` with the exact name of the calendar it " +
         "belongs in — call calendar_list_calendars first if unsure. Falls back to the account's configured " +
-        "default calendar only if `calendar` is omitted entirely.\n\n" +
+        "default calendar only if `calendar` is omitted entirely. A timed event that overlaps another timed event " +
+        "is not created: the result lists the conflicts, so ask the user, and retry with `conflictsOk: true` only " +
+        "if they agreed to the overlap.\n\n" +
         "If the user described the date relative to a weekday (\"next Wednesday\", \"this Friday\") rather than " +
         "giving an exact date, set `expectedWeekday` to that weekday name. Day-of-week arithmetic done in " +
         "reasoning is unreliable — the call is rejected (not silently wrong) if startISO doesn't actually fall " +
@@ -346,13 +348,16 @@ export default defineToolPlugin({
             { additionalProperties: false, description: "Omit for a one-off event." },
           ),
         ),
+        conflictsOk: Type.Optional(
+          Type.Boolean({ description: "Create even if it overlaps other timed events. Only after the user agreed to the overlap." }),
+        ),
       }),
       outputSchema: Type.Object(
         { uid: Type.String(), calendar: Type.String(), url: Type.String() },
         { additionalProperties: false },
       ),
       async execute(
-        { summary, whenAsSaid, weekdayInUserWords, startISO, endISO, allDay, location, description, calendar, expectedWeekday, recurrence },
+        { summary, whenAsSaid, weekdayInUserWords, startISO, endISO, allDay, location, description, calendar, expectedWeekday, recurrence, conflictsOk },
         config,
       ) {
         // Weekday named in the user's own words: checked here, so the guard can't be skipped by the model.
@@ -387,6 +392,21 @@ export default defineToolPlugin({
         const cal = await pickCalendar(dav, config, calendar);
         const start = new Date(startISO);
         const end = endISO ? new Date(endISO) : new Date(start.getTime() + 60 * 60 * 1000);
+        if (!allDay && !conflictsOk) {
+          // Conflicts checked here, across every calendar, so the check can't be skipped or misread by the model.
+          const others = (await Promise.all((await allCalendars(dav)).map((c) => listEventsInCalendar(dav, c, start, end))))
+            .flat()
+            .filter((e) => !e.allDay && e.end && new Date(e.start) < end && new Date(e.end) > start);
+          if (others.length) {
+            return {
+              status: "conflict",
+              error:
+                "Not created: it overlaps " +
+                others.map((e) => `"${e.summary}" (${e.start}–${e.end}, ${e.calendar})`).join("; ") +
+                ". Ask the user before booking over it.",
+            };
+          }
+        }
         const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@openclaw`;
         const gen = ICalGen({ name: "OpenClaw" });
         gen.createEvent({

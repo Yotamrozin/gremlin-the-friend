@@ -5,7 +5,9 @@ set -euo pipefail
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 R="$HOME/.config/radicale"
-TASKS_URL=$(cat "$R/url.txt")
+# The phone uses the https://…ts.net/ address; the bot, on the same machine, talks to the server directly.
+# The .ts.net name depends on Tailscale's DNS, which can lapse after sleep; then every task call fails.
+TASKS_URL="http://$(tailscale ip -4 | head -1):5232/"
 TASKS_PASS=$(cat "$R/password.txt")
 mkdir -p ~/.openclaw/plugins
 
