@@ -102,7 +102,10 @@ def mentioned(title, reply):
 
 results = []
 def record(name, ok, seconds, detail=""):
-    results.append((name, ok, seconds, detail))
+    # Details can quote calendar events, tasks or replies: only with --detail (the report to the owner).
+    if name.startswith("Recall: ") and "--detail" not in sys.argv:
+        name = f"Recall #{sum(r[0].startswith("Recall") for r in results) + 1}"
+    results.append((name, ok, seconds, detail if "--detail" in sys.argv else ""))
 
 # 1. Tomorrow's calendar, all-day events included
 tomorrow = date.today() + timedelta(days=1)
