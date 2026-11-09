@@ -17,9 +17,18 @@ _m = re.search(r'^DEST="([^"]+)"', _bk, re.M)
 BACKUPS = _m.group(1) if _m else f"{HOME}/openclaw-backups"
 VAULT = ((CONF.get("plugins", {}).get("entries", {}).get("memories") or {}).get("config") or {}).get("vaultPath")  # optional
 ROOT_FILES = {"AGENTS.md", "SOUL.md", "USER.md", "IDENTITY.md", "MEMORY.md"}
-AGENTS_BUDGET = 12000          # bytes; past this, rules start crowding out the conversation
+AGENTS_BUDGET = 14000          # bytes; past this, rules start crowding out the conversation
 NARRATIVE_JOB = "Nightly narrative pass"  # the one automation allowed to edit vault notes
 ENV = dict(os.environ, PATH=f"{HOME}/.npm-global/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")
+
+
+# --print is what Claude Code sees while fixing things: names, quotes and USER.md stay out of it.
+# The Signal report goes to the owner and keeps the detail.
+SAFE = "--print" in sys.argv
+
+
+def priv(detail, label):
+    return label if SAFE else detail
 
 
 def sh(*args, timeout=120):
@@ -72,7 +81,7 @@ if extra:
 memory = open(f"{WS}/MEMORY.md").read()
 for name in re.findall(r"`([\w./-]+\.md)`", memory):
     if not any(os.path.exists(f"{WS}/{d}{name}") for d in ("", "memory/context/", "memory-system/", "drafts/")):
-        problems.append(f"MEMORY.md lists {name}, which doesn't exist.")
+        problems.append(f"MEMORY.md lists {priv(name, 'a note')}, which doesn't exist.")
 
 # 12. No secrets in notes: card or account numbers, IBANs, API keys or tokens in the workspace or vault
 SECRET = re.compile(
@@ -85,7 +94,7 @@ for p in glob.glob(f"{WS}/**/*.md", recursive=True) + (glob.glob(f"{VAULT}/**/*.
     m = SECRET.search(open(p, encoding="utf-8", errors="ignore").read())
     if m:
         where = os.path.relpath(p, VAULT) if VAULT and p.startswith(VAULT) else os.path.relpath(p, WS)
-        problems.append(f"{where} contains something that looks like a secret or account number (ending …{m.group(0)[-4:]}).")
+        problems.append(f"{priv(where, 'A note')} contains something that looks like a secret or account number (ending …{m.group(0)[-4:]}).")
 
 # 6. Automation messages must be instructions, not questions to the user
 jobs = (oc_json("automations", "list", "--all") or oc_json("automations", "list") or {}).get("jobs", [])
@@ -122,12 +131,12 @@ if writes:
     for ts, path in writes:
         for a, b, name in windows:
             if a <= ts <= b:
-                problems.append(f"Vault note '{path}' was written during the automation '{name}'.")
+                problems.append(f"Vault note {priv(repr(path), '(name hidden)')} was written during the automation '{name}'.")
 for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
     if os.path.getmtime(p) >= since.timestamp():
         head = open(p, encoding="utf-8", errors="ignore").read(800)
         if "source: user" not in head and "source: legacy" not in head:
-            problems.append(f"Event note '{os.path.basename(p)}' changed without 'source: user'.")
+            problems.append(f"Event note {priv(repr(os.path.basename(p)), '(name hidden)')} changed without 'source: user'.")
 
 # 9. Only approved plugins enabled (the heartbeat's own audit missed one; this doesn't rely on the model)
 approved_file = f"{HOME}/.openclaw/checks/approved-plugins.txt"
@@ -142,29 +151,40 @@ if os.path.exists(approved_file):
 for p in (glob.glob(f"{VAULT}/events/*.md") if VAULT else []):
     text = open(p, encoding="utf-8", errors="ignore").read()
     if os.path.getmtime(p) >= since.timestamp() and "## In your words" not in text and "source: legacy" not in text[:800]:
-        problems.append(f"Event note '{os.path.basename(p)}' has no 'In your words' section.")
+        problems.append(f"Event note {priv(repr(os.path.basename(p)), '(name hidden)')} has no 'In your words' section.")
 
 # 11. Claims without action: replies saying "I've updated/added/..." with no matching change in the ledger
 import sqlite3
 AGENT = next(iter(CONF.get("agents", {}).get("entries", {}) or {"main": 0}))
 DB = f"{HOME}/.openclaw/agents/{AGENT}/agent/openclaw-agent.sqlite"
 PROMISE = re.compile(r"(?i)\b(i'll|i will|let me)\s+(correct|create|add|fix|restore|record|save|update|document|set up|schedule)\b[^.]{0,80}\b(now|immediately|right away)\b|\b(i'll|i will)\s+(keep\s+)?(remind|nudg|ping)\w*\s+you")
-CLAIM = re.compile(r"(?i)\b(i've|i have|i just)\s+(updated|added|scheduled|created|noted|logged|recorded|saved|marked|booked|moved|deleted|documented|set up|put)\b")
+CLAIM = re.compile(r"(?i)\b(i['’]ve|i have|i just)\s+(updated|added|scheduled|created|noted|logged|recorded|saved|marked|booked|moved|deleted|documented|set up|put|taken)\b")
+# A vault claim needs a vault write (memory_* in the ledger), not just any change.
+VAULT_CLAIM = re.compile(r"(?i)\b(created|recorded|saved|logged|added|updated|wrote)\b[^.\n]{0,60}\b(vault|event note|person note|note for|notes for|memor(y|ies)|era)\b")
 if os.path.exists(DB):
-    ledger_times = []
+    ledger_times, vault_times = [], []
     for f in sorted(glob.glob(f"{WS}/ledger/*.jsonl"))[-3:]:
         for line in open(f):
             try:
-                ledger_times.append(datetime.fromisoformat(json.loads(line)["ts"].replace("Z", "+00:00")).timestamp())
+                d = json.loads(line)
+                lt = datetime.fromisoformat(d["ts"].replace("Z", "+00:00")).timestamp()
+                ledger_times.append(lt)
+                if str(d.get("action", "")).startswith("memory_"):
+                    vault_times.append(lt)
             except (ValueError, KeyError):
                 pass
     try:
         db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=26)).strftime("%Y-%m-%dT%H:%M")
-        for (ej,) in db.execute("select event_json from transcript_events where event_json like '%\"role\":\"assistant\"%' and event_json > ''"):
+        try:
+            from compression import zstd   # Python 3.14+; many events are stored compressed
+        except ImportError:
+            zstd = None
+        since_ms = int((datetime.now(timezone.utc) - timedelta(hours=26)).timestamp() * 1000)
+        for ej, ez in db.execute("select event_json, event_zstd from transcript_events where created_at >= ?", (since_ms,)):
             try:
-                e = json.loads(ej)
-            except ValueError:
+                e = json.loads(ej if ej else zstd.decompress(ez).decode() if (ez and zstd) else "{}")
+            except (ValueError, UnicodeDecodeError):
                 continue
             ts, msg = e.get("timestamp", ""), e.get("message") or {}
             if ts < cutoff or msg.get("role") != "assistant":
@@ -175,13 +195,18 @@ if os.path.exists(DB):
             t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
             p = PROMISE.search(text)
             if p and not any(t - 60 <= lt <= t + 600 for lt in ledger_times):
-                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat promised \"{text[p.start():p.end()+40].strip()}…\" and then changed nothing.")
+                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat promised {priv(chr(34) + text[p.start():p.end()+40].strip() + '…' + chr(34), 'an action')} and then changed nothing.")
+            v = VAULT_CLAIM.search(text)
+            negated = v and re.search(r"(?i)(n['’]t|\bnot|\bno)\W+(\w+\W+)?$", text[max(0, v.start() - 25):v.start()])
+            if v and not negated and not any(t - 600 <= lt <= t + 300 for lt in vault_times):
+                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat said {priv(chr(34) + ' '.join(text[max(0, v.start()-20):v.end()+40].split()) + '…' + chr(34), 'it saved to the vault')} but nothing was written to the vault.")
+                continue
             m = CLAIM.search(text)
             if not m or text[m.end():m.end() + 20].strip().lower().startswith(("my understanding", "my notes", "my memory")):
                 continue   # 'I've updated my understanding' isn't a claim to have changed anything
             t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
             if not any(t - 300 <= lt <= t + 300 for lt in ledger_times):   # writes can land just before or after the reply
-                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat said \"{text[max(0, m.start()-10):m.start()+90].strip()}…\" but nothing was changed.")
+                problems.append(f"At {datetime.fromtimestamp(t):%H:%M} Bat said {priv(chr(34) + text[max(0, m.start()-10):m.start()+90].strip() + '…' + chr(34), 'it changed something')} but nothing was changed.")
     except sqlite3.Error:
         pass
 
@@ -199,6 +224,9 @@ for name in (n for n in RULE_FILES if os.path.exists(f"{WS}/{n}")):
     if old is not None and old != cur:
         rules_changed.append(name)
         diff = [l for l in difflib.unified_diff(old, cur, lineterm="", n=0) if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+        if SAFE and name == "USER.md":   # facts about the owner: say that it changed, not how
+            problems.append(f"ℹ️ USER.md changed ({len(diff)} lines).")
+            continue
         problems.append(f"ℹ️ {name} changed:\n" + "\n".join(d[:200] for d in diff[:20]) + ("\n…" if len(diff) > 20 else ""))
         for added in (d[1:] for d in diff if d.startswith("+") and d[1:].strip()):
             if (m := VAGUE.search(added)):
@@ -209,7 +237,7 @@ for name in (n for n in RULE_FILES if os.path.exists(f"{WS}/{n}")):
     if "--print" not in sys.argv:
         open(seen, "w", encoding="utf-8").write("\n".join(cur))
 if rules_changed and "--print" not in sys.argv:
-    _, out = sh("python3", f"{HOME}/.openclaw/checks/regression.py", timeout=1800)
+    _, out = sh("python3", f"{HOME}/.openclaw/checks/regression.py", "--detail", timeout=1800)
     fails = [l for l in out.splitlines() if l.startswith("FAIL")]
     problems.append("Regression tests after the rule change: " + ("all passed." if "PASS" in out and not fails else "\n" + "\n".join(fails or [out[-300:]])))
 

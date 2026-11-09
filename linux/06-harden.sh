@@ -121,7 +121,7 @@ systemctl --user enable --now openclaw-backup.timer
 systemctl --user start openclaw-backup.service && echo "Test backup written to $DEST"
 
 echo "==> Daily outside check (plain code, no AI): messages you only if something is wrong"
-mkdir -p ~/.openclaw/checks/state && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
+mkdir -p ~/.openclaw/checks/state && cp "$KIT/checks/daily-check.py" "$KIT/checks/regression.py" "$KIT/checks/trace.py" ~/.openclaw/checks/ && chmod 700 ~/.openclaw/checks/*.py
 for f in AGENTS.md USER.md SOUL.md; do [ -f "$W/$f" ] && cp "$W/$f" ~/.openclaw/checks/state/$f; done   # baseline: later rule changes get reported
 { echo "# Plugins allowed to be enabled (one per line). The daily check flags anything else."; for p in $keep; do echo "$p"; done; } > ~/.openclaw/checks/approved-plugins.txt
 cat > ~/.config/systemd/user/openclaw-check.service <<'EOF'
