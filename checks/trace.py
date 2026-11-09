@@ -68,6 +68,9 @@ def trace(since_ms, session):
         m = e.get("message") or {}
         role, ts = m.get("role"), (e.get("timestamp") or "")[:19].replace("T", " ")
         where_ = f"{sid[:8]}#{seq}"
+        if e.get("type") == "reset":   # /new: same stored record, fresh conversation
+            print(f"{ts}  {where_:14} ── /new: fresh conversation from here ──")
+            continue
         if role == "user":
             t = texts(m)
             job = JOB.match(t)
