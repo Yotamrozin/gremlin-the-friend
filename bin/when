@@ -3,6 +3,7 @@
 
   when 2026-11-14            weekday and how far from today
   when friday                the next Friday (not today)
+  when last friday           the most recent Friday before today
   when today +3w             also +10d, -2d, +1m, +1y; several offsets add up
   when 2026-11-03 2026-12-01 days between two dates
 """
@@ -12,7 +13,7 @@ from datetime import date, timedelta
 DAYS = [d.lower() for d in calendar.day_name]
 
 
-def parse(tok, today):
+def parse(tok, today, past=False):
     t = tok.lower()
     if t in ("today", "now"):
         return today
@@ -22,7 +23,8 @@ def parse(tok, today):
         return today - timedelta(1)
     for i, d in enumerate(DAYS):
         if len(t) >= 3 and d.startswith(t):
-            return today + timedelta((i - today.weekday() - 1) % 7 + 1)
+            step = (i - today.weekday() - 1) % 7 + 1
+            return today - timedelta((today.weekday() - i - 1) % 7 + 1) if past else today + timedelta(step)
     return date.fromisoformat(tok)
 
 
@@ -44,14 +46,17 @@ def describe(d, today):
 def main(argv, today):
     if not argv:
         return __doc__.strip()
-    dates, d = [], None
+    dates, d, past = [], None, False
     for tok in argv:
+        if tok.lower() == "last":
+            past = True
+            continue
         if re.fullmatch(r"[+-]\d+[dwmy]", tok):
             d = shift(d or today, tok)
         else:
             if d is not None:
                 dates.append(d)
-            d = parse(tok, today)
+            d, past = parse(tok, today, past), False
     dates.append(d)
     if len(dates) == 2:
         return f"{(dates[1] - dates[0]).days} days from {dates[0]:%a %-d %b %Y} to {dates[1]:%a %-d %b %Y}"
@@ -66,6 +71,7 @@ if __name__ == "__main__":
         assert "2026-11-24" in main(["today", "+3w"], t) and "2027-02-28" in main(["2027-01-31", "+1m"], t)
         assert main(["2026-11-03", "2026-12-01"], t).startswith("28 days")
         assert "1 day ago" in main(["yesterday"], t)
+        assert "2026-10-30" in main(["last", "friday"], t) and "2026-10-27" in main(["last", "tuesday"], t)
         print("ok")
     else:
         try:

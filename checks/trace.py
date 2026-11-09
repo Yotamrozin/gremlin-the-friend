@@ -87,7 +87,7 @@ def trace(since_ms, session):
             if m.get("stopReason") in ("aborted", "error") or m.get("errorMessage"):
                 flags.append(f"FAILED: {kind_of_error(m.get('errorMessage', ''))}")
             v = VAULT_CLAIM.search(t)
-            if v and not NEGATED.search(t[max(0, v.start() - 25):v.start()]) and not vault_writes.get(sid):
+            if v and not calls and not NEGATED.search(t[max(0, v.start() - 25):v.start()]) and not vault_writes.get(sid):
                 flags.append("CLAIMS A VAULT SAVE, none made")
             if PROMISE.search(t) and not calls:
                 flags.append("PROMISES ACTION, no call")
