@@ -100,7 +100,8 @@ def trace(since_ms, session):
         elif role == "toolResult":
             t = texts(m)
             err = m.get("isError") or re.search(r'"status":\s*"error"|^\s*\{\s*"error"', t)
-            print(f"{ts}  {where_:14}   ↳ {m.get('toolName', '?')}: " + (f"ERROR ({kind_of_error(t)})" if err else "ok"))
+            st = re.search(r'"status":\s*"(created|extended|check-names|check-date|completed|deleted)"', t)   # outcome words, not content
+            print(f"{ts}  {where_:14}   ↳ {m.get('toolName', '?')}: " + (f"ERROR ({kind_of_error(t)})" if err else st.group(1) if st else "ok"))
 
 
 if __name__ == "__main__":
